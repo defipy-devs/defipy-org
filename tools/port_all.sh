@@ -60,11 +60,11 @@ rst() {
     python tools/rst_to_mdx.py --input "$SRC/$1" --output "$DST/$2"
 }
 
-# Ecosystem
-rst ecosystem/book.rst                ecosystem/book.mdx
-rst ecosystem/courses.rst             ecosystem/courses.mdx
-rst ecosystem/hackathons.rst          ecosystem/hackathons.mdx
-rst ecosystem/presentations.rst       ecosystem/presentations.mdx
+# Ecosystem (sources live at docs/ root, not docs/ecosystem/)
+rst book.rst                          ecosystem/book.mdx
+rst courses.rst                       ecosystem/courses.mdx
+rst hackathons.rst                    ecosystem/hackathons.mdx
+rst presentations.rst                 ecosystem/presentations.mdx
 
 # Getting Started
 rst quick/index.rst                   quick.mdx
@@ -74,10 +74,18 @@ rst legal.rst                         legal.mdx
 
 # Core / Agentic narrative
 rst core_primitives/index.rst         core-primitives.mdx
+rst agentic_overview.rst              agentic-overview.mdx
+rst twin_concept.rst                  twin-concept.mdx
 rst agentic/tool_schemas.rst          agentic-tool-schemas.mdx
 rst agentic/binding_to_claude.rst     binding-to-claude.mdx
 rst agentic/binding_to_other_llms.rst binding-to-other-llms.mdx
 rst agentic/mcp_demo.rst              mcp-demo.mdx
+
+# Agentic primitive reference docs (hand-written RST at docs/ root)
+rst primitive_contract.rst            primitive-contract.mdx
+rst agentic_tools_reference.rst       agentic-tools-reference.mdx
+rst agentic_twin_reference.rst        agentic-twin-reference.mdx
+rst agentic_result_dataclasses.rst    agentic-result-dataclasses.mdx
 
 # Math (RST sources)
 rst math/balancer_math.rst            math/balancer-math.mdx

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -46,11 +47,26 @@ REF_TO_SLUG = {
     "quick_start": "/quick/",
     "whats_new_v2": "/quick/whats-new-v2/",
     "roadmap": "/roadmap/",
+    "balancer_math": "/math/balancer-math/",
+    "stableswap_math": "/math/stableswap-math/",
+    # Legacy / consolidated targets — these RST anchors exist in the source but
+    # have no dedicated page in the new IA; route them to the closest fit.
+    "usage": "/quick/",
+    "custom_twins": "/twin-concept/",
+    "mock_provider": "/twin-concept/",
+    "live_provider": "/twin-concept/",
 }
 
 
 def pandoc_to_gfm(rst_text: str) -> str:
     """Run pandoc to produce GitHub-flavored markdown."""
+    if shutil.which("pandoc") is None:
+        print(
+            "error: pandoc not found on PATH. Install with `brew install pandoc` "
+            "(macOS) or `sudo apt install pandoc` (Linux).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     proc = subprocess.run(
         ["pandoc", "-f", "rst", "-t", "gfm", "--wrap=preserve"],
         input=rst_text, capture_output=True, text=True, check=False,
