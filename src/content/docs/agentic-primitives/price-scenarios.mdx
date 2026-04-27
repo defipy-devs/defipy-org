@@ -141,12 +141,14 @@ value_change_pct:   -0.004842975611287414`}</div>
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Hypothetical price-move projection is supported across all four AMM families via sibling primitives, mirroring [Position Analysis](/agentic-primitives/position-analysis/). Each primitive uses its protocol's natural IL formula — closed-form for V2/V3, weight-aware for Balancer, invariant-aware for Stableswap.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | `SimulatePriceMove` — closed-form V2 IL |
-| Uniswap V3 | ✅ | `SimulatePriceMove` with `lwr_tick`/`upr_tick` for range-aware IL |
-| Balancer | ✅ | `SimulateBalancerPriceMove` — 2-asset only |
-| Stableswap | ✅ | `SimulateStableswapPriceMove` — 2-asset only; unreachable-alpha returns `None` for value fields |
+| Uniswap V2 | Full | `SimulatePriceMove`, V2 path — closed-form IL. |
+| Uniswap V3 | Full | `SimulatePriceMove`, V3 path with `lwr_tick`/`upr_tick` for range-aware IL. |
+| Balancer | Full | `SimulateBalancerPriceMove`, weight-aware IL formula. |
+| Stableswap | Full | `SimulateStableswapPriceMove`; unreachable-alpha returns Optional `None` value fields with metadata still populated. |
 
 ## MCP tool exposure
 
