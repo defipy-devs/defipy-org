@@ -125,12 +125,16 @@ notes: ['pool_b: Balancer slippage not computed in v1 (CalculateSlippage is Unis
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+`CompareProtocols` is full cross-protocol; `CompareFeeTiers` is V3-only by definition (V2 has a single 30-bps fee, Bal/Ssw don't have fee tiers in this sense). Where Balancer/Stableswap show up as Partial below, the gap is `slippage_at_amount` returning `None` because [`CalculateSlippage`](/agentic-primitives/execution/) is V2/V3-only in v2.0 — IL is still computed.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | `CompareProtocols` (full) |
-| Uniswap V3 | ✅ | `CompareFeeTiers` (single-protocol); `CompareProtocols` (full, with `v3_range_pct` constraint) |
-| Balancer | ⚠️ | `CompareProtocols` (IL only — slippage is `None`) |
-| Stableswap | ⚠️ | `CompareProtocols` (IL only; `None` on unreachable depeg) |
+| Uniswap V2 | Full (`CompareProtocols`); N/A (`CompareFeeTiers` — V2 has a single 30-bps fee) | |
+| Uniswap V3 | Full (both primitives) | `CompareFeeTiers` is V3-only by definition. |
+| Balancer | Partial | Accepted as candidate in `CompareProtocols`; `slippage_at_amount` returns `None` because `CalculateSlippage` is Uniswap-only. IL still computed. |
+| Stableswap | Partial | Same shape as Balancer — accepted in `CompareProtocols`, slippage degrades to `None`. |
+
+Slippage gap closes when `CalculateSlippage` extensions land for Balancer/Stableswap (Bucket A / v2.1).
 
 ## MCP tool exposure
 
