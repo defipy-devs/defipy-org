@@ -1,0 +1,122 @@
+---
+title: "OptimalDepositSplit"
+description: "V2 zap-in projection: closed-form optimal swap fraction for a single-sided deposit, with the counterintuitive dα/d(dx) < 0 result. Non-mutating preview of SwapDeposit."
+---
+
+`OptimalDepositSplit` is the **read-only**, stateless projection of the optimal swap fraction for a single-sided V2 zap-in. It tells you what [`SwapDeposit`](/api/primitive/core/swap-deposit/) *would do* against the current pool state without executing the swap or the deposit.
+
+V2 only — V3 raises `ValueError` (the V3 extension is blocked on the upstream `UniV3Helper.quote` hard-coded fee, tracked on the cleanup backlog).
+
+:::note[When to use `OptimalDepositSplit` vs `SwapDeposit`]
+[`SwapDeposit`](/api/primitive/core/swap-deposit/) **executes** — it actually performs the swap and the deposit, mutating the pool. `OptimalDepositSplit` **projects** — it returns the same `α` and the resulting balances as a typed dataclass without touching the pool. Pair them when you want a preview-then-execute flow.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `OptimalDepositSplit().apply(lp, token_in, amount_in)` |
+| Uniswap V3 | ❌ Raises `ValueError` (deferred, pending UniV3Helper fix) |
+| Balancer | ❌ Not applicable — `AddLiquidity` already accepts single-asset deposits |
+| Stableswap | ❌ Not applicable — same architectural reason as Balancer |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 LP exchange at current state. V3 raises. |
+| `token_in` | `ERC20` | The token being provided (the "single side"). Must be one of the pool's two tokens. |
+| `amount_in` | `float` | Total human-units quantity of `token_in` to zap. Must be `> 0`. |
+
+## Math
+
+The V2 zap-in problem: starting with `dx` of `token_in`, swap fraction `α` of it for `token_out`, then deposit the remaining `(1-α)·dx` paired with the swap output. The optimum minimizes leftover dust.
+
+**Closed-form quadratic** (for V2, with fee multiplier `f = 0.997`):
+
+$$
+f \cdot \alpha^2 \cdot dx + r \cdot \alpha \cdot (1 + f) - r = 0
+$$
+
+where `r` is the input-side reserve. Solving via the quadratic formula gives the unique `α ∈ (0, 1)` consistent with the V2 add-liquidity invariant.
+
+**Limit at zero size.** As `dx → 0`,
+
+$$
+\alpha \to \frac{1}{1 + f} \approx 0.50075
+$$
+
+The naive answer is 50/50; the slight upward bias comes from fee asymmetry — the swap leg eats a 0.3% fee that the deposit leg doesn't, so a touch more goes to the swap side at infinitesimal size.
+
+**Direction of change** (the counterintuitive result). Implicit differentiation of the quadratic gives
+
+$$
+\frac{d\alpha}{d(dx)} = -\frac{\alpha^2 f}{2 \alpha f \cdot dx + r(1 + f)} < 0 \quad \text{identically}
+$$
+
+So **`α` decreases monotonically with deposit size**. The naive intuition "the fee eats my swap so I should swap more to compensate" is wrong: the fee is already baked into `get_amount_out`, and what dominates at size is the AMM curve's nonlinearity. A larger swap moves the spot price more → each unit swapped buys *less* of the opposing token → you swap *less*.
+
+This direction was wrong-signed in an earlier test iteration; failing tests forced the derivation. Naming this in the docs prevents future readers (and LLMs composing primitives) from making the same mistake.
+
+**Slippage and expected LP tokens.** Reported in `token_out` units:
+
+$$
+\text{slippage\_cost} = \alpha \cdot dx \cdot p_{spot} - \text{swap\_amount\_out}
+$$
+
+where `p_spot = reserve_out / reserve_in`. Expected LP tokens come from V2's `add_liquidity` mint formula `L_new = min(b₀·L/res₀, b₁·L/res₁)` against post-swap reserves — the primitive computes the same thing the executor would compute.
+
+## Example
+
+```python
+from defipy import OptimalDepositSplit
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+v2_tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+result = OptimalDepositSplit().apply(
+    lp_v2,
+    token_in = v2_tokens["ETH"],
+    amount_in = 100.0,
+)
+
+print(f"token_in:               {result.token_in_name}")
+print(f"amount_in:              {result.amount_in}")
+print(f"optimal_fraction:       {result.optimal_fraction:.6f}")
+print(f"swap_amount_in:         {result.swap_amount_in:.4f}")
+print(f"swap_amount_out:        {result.swap_amount_out:.4f}")
+print(f"deposit_amount_in:      {result.deposit_amount_in:.4f}")
+print(f"deposit_amount_out:     {result.deposit_amount_out:.4f}")
+print(f"expected_lp_tokens:     {result.expected_lp_tokens:.4f}")
+print(f"slippage_cost:          {result.slippage_cost:.4f}")
+print(f"slippage_pct:           {result.slippage_pct:.6f}")
+```
+
+<div class="nb-output">{`token_in:               ETH
+amount_in:              100.0
+optimal_fraction:       0.488822
+swap_amount_in:         48.8822
+swap_amount_out:        4647.0751
+deposit_amount_in:      51.1178
+deposit_amount_out:     4647.0751
+expected_lp_tokens:     487.3553
+slippage_cost:          241.1423
+slippage_pct:           0.049331`}</div>
+
+`optimal_fraction = 0.4888` — below the 0.5008 zero-size limit because this 100 ETH zap is meaningful relative to the 1000 ETH reserve, so the curve's nonlinearity has bitten. The closed-form does *not* reject deposits that are large fractions of reserves — `slippage_pct` (~4.9% here) surfaces the friction; the caller decides whether to proceed.
+
+## How this composes
+
+- Delegates to `SwapDeposit._calc_univ2_deposit_portion` (in `uniswappy.process.deposit`) for the closed-form `α`. That same helper is the math heart of the executing [`SwapDeposit`](/api/primitive/core/swap-deposit/) primitive — the projection and the executor share the solve.
+- Composed *into* by [`EvaluateRebalance`](/agentic-primitives/optimization/evaluate-rebalance/) when projecting the redeposit leg of a withdraw → swap → re-zap cycle.
+
+## See also
+
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — the executing counterpart; same `α`, mutating
+- [`EvaluateRebalance`](/agentic-primitives/optimization/evaluate-rebalance/) — composes this primitive for the redeposit leg
+- [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) — slippage on the swap leg in isolation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10. Optimization questions are typically composed LLM-side after a position-level analysis.

@@ -1,0 +1,115 @@
+---
+title: "FindBreakEvenPrice"
+description: "Closed-form upside/downside α inversion: at what price ratios do accumulated fees exactly offset impermanent loss? V2/V3 supported, with the upside-hedged condition surfaced."
+---
+
+`FindBreakEvenPrice` is a **read-only**, stateless primitive that answers *"at what price ratio α does accumulated fee income exactly cancel impermanent loss?"* — returning **both** roots (one below entry, one above) because the IL curve is symmetric about α=1.
+
+V2 and V3 supported via the same closed form, scaled by the V3 range factor. Useful for setting alert thresholds and for understanding the asymmetry between downside and upside cushion.
+
+:::note[When to use `FindBreakEvenPrice` vs `FindBreakEvenTime`]
+Use `FindBreakEvenPrice` when you have a **fixed `fee_income`** and want to know at what *prices* you're hedged. Use [`FindBreakEvenTime`](/agentic-primitives/break-even/find-break-even-time/) when you have a **fixed price trajectory** and want to know how long until accrued fees catch up to current IL drag at the current accrual rate.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `FindBreakEvenPrice().apply(lp, lp_init_amt, fee_income)` |
+| Uniswap V3 | `FindBreakEvenPrice().apply(lp, lp_init_amt, fee_income, lwr_tick, upr_tick)` |
+| Balancer | ❌ Deferred (v2.1) — weighted-pool IL has no general closed-form inverse |
+| Stableswap | ❌ Deferred (v2.1) — fresh derivation needed over the invariant |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `Exchange` | LP exchange at current pool state. V2 or V3. |
+| `lp_init_amt` | `float` | LP tokens held by this position. Must be `> 0`. |
+| `fee_income` | `float` | Accumulated fee income in token0 (numeraire) units. Must be `>= 0`. Zero returns the degenerate case (both alphas = 1.0). |
+| `lwr_tick` | `int` *(V3 only)* | Lower tick of the position. |
+| `upr_tick` | `int` *(V3 only)* | Upper tick of the position. |
+
+## Math
+
+The break-even equation: fees offset the IL drag exactly when
+
+$$
+\text{fee\_income} = \text{hold\_value}(\alpha) \cdot |\mathrm{IL}(\alpha)|
+$$
+
+Substituting the V2 IL formula and `hold_value(α) = x_init·(1+α)` (numeraire token0), this collapses to
+
+$$
+f \cdot \alpha = (1 - \sqrt{\alpha})^2, \qquad f = \frac{\text{fee\_income}}{x_{tkn,init}}
+$$
+
+where `x_tkn_init` is the position's paper-share of token0 at entry (provided by `UniswapImpLoss`).
+
+**Two roots.** Solving the quadratic in `√α`:
+
+$$
+\alpha_{\text{down}} = \frac{1}{(1 + \sqrt{f})^2}, \qquad \alpha_{\text{up}} = \frac{1}{(1 - \sqrt{f})^2}
+$$
+
+The asymmetry is the information: the downside cushion (price drop you can absorb) and the upside cushion (price rise above which fees no longer hedge IL) are different functions of `f`, even though IL itself is symmetric.
+
+**Upside-hedged condition.** The upside root requires `√f < 1`, i.e., `f < 1`. When fees have accumulated to `f >= 1`, the position is **upside-hedged** — there is no finite upward price at which IL would exceed accrued fees, so `break_even_alpha_up = None` and `upside_hedged = True`. The downside root always exists for any `f > 0` because IL diverges as `α → 0`.
+
+**V3 scaling.** For V3, the IL formula picks up a range-scale factor
+
+$$
+k = \frac{\sqrt{r}}{\sqrt{r} - 1}, \qquad r = \frac{P_{upper}}{P_{lower}}
+$$
+
+The closed form is the same; `f` is replaced by `f / k` throughout. Tighter ranges have larger `k`, which shrinks the effective `f` and *widens* the break-even alphas (the position must move further before fees compensate the more-aggressive concentrated-liquidity IL).
+
+**Numeraire convention.** All prices are token1-per-token0 (matches `lp.get_price(token0)`), and `fee_income` is in token0 units — consistent with [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) and [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/).
+
+## Example
+
+```python
+from defipy import FindBreakEvenPrice
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+result = FindBreakEvenPrice().apply(
+    lp_v2,
+    lp_init_amt = 10000.0,
+    fee_income = 50.0,    # 50 ETH of accumulated fees
+)
+
+print(f"break_even_alpha_down:   {result.break_even_alpha_down:.6f}")
+print(f"break_even_alpha_up:     {result.break_even_alpha_up:.6f}")
+print(f"break_even_price_down:   {result.break_even_price_down:.4f}")
+print(f"break_even_price_up:     {result.break_even_price_up:.4f}")
+print(f"fee_to_entry_ratio:      {result.fee_to_entry_ratio:.6f}")
+print(f"upside_hedged:           {result.upside_hedged}")
+```
+
+<div class="nb-output">{`break_even_alpha_down:   0.667907
+break_even_alpha_up:     1.658962
+break_even_price_down:   66.7907
+break_even_price_up:     165.8962
+fee_to_entry_ratio:      0.050000
+upside_hedged:           False`}</div>
+
+At the current 100 DAI/ETH price with 50 ETH of accumulated fees (`f = 0.05`), the position is hedged between roughly 66.8 and 165.9 DAI/ETH. Below 66.8 or above 165.9 the IL drag eats more than the fee cushion. With more fees (`f → 1`), `alpha_up → ∞` and `upside_hedged` flips to `True`.
+
+## How this composes
+
+- Composes [`UniswapImpLoss`](https://github.com/defipy-devs/uniswappy) for the V2/V3 IL formula and for `x_tkn_init` (the entry-time paper-share denominator).
+- Independent of [`FindBreakEvenTime`](/agentic-primitives/break-even/find-break-even-time/) — that primitive uses real-time fee accrual rate to project days, not closed-form alphas.
+
+## See also
+
+- [`FindBreakEvenTime`](/agentic-primitives/break-even/find-break-even-time/) — time-based break-even using current fee accrual rate
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — current-state IL + fee decomposition
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — single-shock projection
+- [Uniswap V2 math](/math/univ2-math/) — the underlying IL formula
+- [Uniswap V3 math](/math/univ3-math/) — V3 range-scale factor derivation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10. Break-even questions are typically derived LLM-side after `AnalyzePosition`.

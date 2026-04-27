@@ -1,0 +1,126 @@
+---
+title: "AssessDepegRisk"
+description: "Closed-form depeg-risk quantification for a stableswap LP position. Stateless, non-mutating; reports IL across N depeg magnitudes with V2 comparison and reachability handling."
+---
+
+`AssessDepegRisk` is the **read-only**, stateless primitive that quantifies how much a stableswap LP position would lose at a set of depeg magnitudes. It composes [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy) (which carries the closed-form IL math), enriches each scenario with absolute LP/hold values and a V2 comparison, and surfaces unreachable scenarios as `Optional[float]` rather than raising.
+
+Stableswap-only — V2/V3 raise `ValueError`. For V2/V3 price-move scenarios use [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/).
+
+:::note[When to use `AssessDepegRisk` vs `SimulateStableswapPriceMove`]
+Both run on stableswap pools. Use `AssessDepegRisk` for the **risk surface** — N depeg magnitudes at once, with V2 baseline and reachability flags. Use [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) for a **single** projected price change, returning a richer single-scenario dataclass.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Raises `ValueError` — use `SimulatePriceMove` |
+| Uniswap V3 | ❌ Raises `ValueError` — use `SimulatePriceMove` |
+| Balancer | ❌ Not supported |
+| Stableswap | `AssessDepegRisk().apply(lp, lp_init_amt, depeg_token, depeg_levels=None, compare_v2=True)` |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `StableswapExchange` | Stableswap pool. Must be 2-asset (N=2). Raises `ValueError` if N>2. |
+| `lp_init_amt` | `float` | LP tokens held by this position, in human units. Must be `> 0`. |
+| `depeg_token` | `ERC20` | The asset assumed to depeg. Must be in the pool's vault. |
+| `depeg_levels` | `list[float]` *(optional)* | Depeg magnitudes as fractions (each in `(0, 1)`). Default `[0.02, 0.05, 0.10, 0.20, 0.50]`. |
+| `compare_v2` | `bool` *(optional, default `True`)* | If `True`, each scenario reports the equivalent V2 constant-product IL at the same price deviation as a side-by-side benchmark. |
+
+## Math
+
+The closed-form expansion of the stableswap invariant — derived in `StableswapImpLoss` and composed here — proceeds in five steps. Following Cintra & Holloway 2023 and the Curve whitepaper as academic precursors; the *innovation* over those sources is the packaging as a stateless, typed primitive with explicit reachability semantics, not the derivation itself.
+
+**1. Parameterize off-peg state by ε.** Let `x` and `y` be the two reserves; define
+
+$$
+\varepsilon = \frac{x - y}{x + y}
+$$
+
+so `ε = 0` at peg and `|ε| < 1` everywhere reachable.
+
+**2. Expand the stableswap invariant** to relate the pool's value `S = x + y` to the invariant `D` at amplification coefficient `A`:
+
+$$
+u = \frac{S}{D} - 1 = \frac{\varepsilon^2}{(4A + 2)(1 - \varepsilon^2)}
+$$
+
+**3. Off-peg price.** The marginal price `dy/dx` away from peg expands to
+
+$$
+\delta \approx \frac{2\varepsilon}{\alpha + 1 + \varepsilon}, \qquad \alpha = A(1 - \varepsilon^2)^2
+$$
+
+where `δ = 1 − price` is the depeg fraction the caller specifies.
+
+**4. Invert via fixed-point.** Given `δ`, solve for `ε` by fixed-point iteration on the relation in step 3 (~5 iterations to converge). Reachability bound: when no `|ε| < 1` satisfies a given `δ` for the pool's `A`, the depeg level is **unreachable** — `StableswapImpLoss` raises `DepegUnreachableError`, and `AssessDepegRisk` surfaces this as `il_pct = None`, `lp_value_at_depeg = None`, `hold_value_at_depeg = None` on the corresponding `DepegScenario`.
+
+**5. Closed-form IL.** With `ε` solved:
+
+$$
+v_{LP} = S \cdot \left(1 - \frac{\delta(1 + \varepsilon)}{2}\right), \qquad v_{hold} = D \cdot \left(1 - \frac{\delta}{2}\right)
+$$
+
+$$
+\mathrm{IL} = \frac{v_{LP} - v_{hold}}{v_{hold}}
+$$
+
+**V2 comparison.** Always computable regardless of stableswap reachability — at depeg `δ`, the V2 constant-product IL is the closed form `2√α/(1+α) − 1` evaluated at `α = 1 − δ`. The delta between V2 and stableswap IL at the same depeg is the **amplification benefit** for that scenario.
+
+## Example
+
+```python
+from defipy import AssessDepegRisk
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_sts = builder.build(provider.snapshot("usdc_dai_stableswap_A10"))
+sts_tokens = lp_sts.factory.token_from_exchange[lp_sts.name]
+
+result = AssessDepegRisk().apply(
+    lp_sts,
+    lp_init_amt = 100.0,
+    depeg_token = sts_tokens["USDC"],
+)
+
+print(f"depeg_token:               {result.depeg_token}")
+print(f"protocol_type / n_assets:  {result.protocol_type} / {result.n_assets}")
+print(f"current_peg_deviation:     {result.current_peg_deviation}")
+print()
+print(f"{'depeg':>8}  {'il_pct':>12}  {'lp_value':>12}  {'v2_il':>12}")
+for s in result.scenarios:
+    il = f"{s.il_pct:.6f}" if s.il_pct is not None else "None"
+    val = f"{s.lp_value_at_depeg:.4f}" if s.lp_value_at_depeg is not None else "None"
+    v2 = f"{s.v2_il_comparison:.6f}" if s.v2_il_comparison is not None else "None"
+    print(f"{s.depeg_pct*100:>7.0f}%  {il:>12}  {val:>12}  {v2:>12}")
+```
+
+<div class="nb-output">{`depeg_token:               USDC
+protocol_type / n_assets:  stableswap / 2
+current_peg_deviation:     0.0
+
+   depeg        il_pct      lp_value         v2_il
+      2%     -0.000814       98.9194     -0.000051
+      5%     -0.004843       97.0278     -0.000329
+     10%     -0.016972       93.3877     -0.001386
+     20%          None          None     -0.006192
+     50%          None          None     -0.057191`}</div>
+
+The 20% and 50% scenarios are **unreachable** at `A=10` — the closed-form fixed-point has no `|ε| < 1` solution. Higher `A` makes more scenarios unreachable; lower `A` widens the reachable basin. The V2 comparison column is always populated since V2's IL is closed-form on any `α > 0`.
+
+## How this composes
+
+- Composes [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy) (stableswappy package) for the closed-form IL math; this primitive adds the multi-level scenario surface, V2 benchmarking, absolute LP/hold values, and unreachable-scenario handling.
+- Composed *into* by [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) when one of the candidates is a stableswap pool — though `CompareProtocols` uses single-shock `StableswapImpLoss` directly rather than this primitive's full risk surface.
+
+## See also
+
+- [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) — single-scenario projection, richer per-scenario dataclass
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — current-state IL decomposition (no scenarios)
+- [Stableswap math](/math/stableswap-math/) — the underlying invariant and ε ↔ δ relation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** `AssessDepegRisk` is in the curated v2.0 MCP toolset — agents asking depeg questions get this directly.

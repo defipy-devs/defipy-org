@@ -1,0 +1,109 @@
+---
+title: "DetectFeeAnomaly"
+description: "V2 fee-anomaly detector: invariant-vs-contract consistency check. Compares the constant-product invariant's predicted swap output at the stated fee against the pool's actual reported output."
+---
+
+`DetectFeeAnomaly` is a **read-only**, stateless primitive that validates whether a pool's actual swap output matches what the constant-product invariant predicts at the pool's stated fee. Any divergence flags a pool whose real behavior departs from its stated parameters.
+
+V2 only — V3 / Balancer / Stableswap raise `ValueError`. The primitive reports the observation cleanly; **it does not assign motive** (skim wrappers, fee bugs, integer rounding, and admin fees all produce the same surface signal).
+
+:::note[What this primitive catches — and what it doesn't]
+**Catches:** divergence between invariant prediction and pool output at the *stated* fee — proxy/wrapper skim, undocumented admin fees, fee-arithmetic bugs, integer-rounding adversarial to the trader, fee rebates (overdelivery side). **Does not catch:** an honestly-advertised high fee. A pool with `stated_fee_bps = 100` whose output exactly matches the invariant at 1% will report `anomaly_detected = False`. Whether 1% is *reasonable* is a product question, not a math question.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `DetectFeeAnomaly(discrepancy_threshold_bps=10.0).apply(lp, token_in, test_amount=None)` |
+| Uniswap V3 | ❌ Raises `ValueError` — pending non-mutating quote path that honors `lp.fee` |
+| Balancer | ❌ Raises `ValueError` — different invariant; future work |
+| Stableswap | ❌ Raises `ValueError` — different invariant; future work |
+
+## Constructor parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `discrepancy_threshold_bps` | `float` *(default `10.0`)* | Minimum absolute discrepancy (bps of theoretical output) to flag as an anomaly. Must be `>= 0`. `10` bps is well above float-precision noise (~1e-8 bps in practice) and well below anything a real skim contract would need to extract meaningful value. |
+
+## `apply()` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 LP exchange. V3 / other protocols raise `ValueError`. |
+| `token_in` | `ERC20` | The token being swapped *in*. Must be one of the pool's two tokens. |
+| `test_amount` | `float` *(optional)* | Size of the synthetic trade in `token_in` units. Defaults to **1% of the input token's reserve** — small enough not to move the pool appreciably, large enough that float-precision noise stays well below threshold. Must be `> 0` when explicitly specified. |
+
+## Math
+
+**Architectural choice — *Shape A* (invariant-vs-contract).** Two shapes are possible for a fee-anomaly check:
+
+- **Shape A** (this primitive): compare the pool's actual output against what the invariant predicts at the pool's *own* stated fee. Internal-consistency check. Works without caller knowledge of the expected fee.
+- **Shape B** (deferred): compare against a user-supplied `expected_fee_bps`. Requires the caller to know what fee to expect.
+
+Shape A is more general (works without caller knowledge), catches a richer class of misbehavior, and is what the v1 spec captures. Shape B is deferrable as an optional `expected_fee_bps` parameter in a future iteration.
+
+**Theoretical output.** From the constant-product-with-fee invariant, the *expected* output of a swap of size `dx` against reserves `(x, y)` at fee `f`:
+
+$$
+dy = \frac{dx \cdot (1 - f) \cdot y}{x + dx \cdot (1 - f)}
+$$
+
+For V2, `f = 0.003` (30 bps via `997/1000` in the swap math). V2 pools do **not** expose a `.fee` attribute; the fee is a protocol constant, not per-pool configuration.
+
+**Actual output.** From the pool's `lp.get_amount_out(test_amount, token_in)` — a pure query, no state mutation.
+
+**Signed discrepancy.**
+
+$$
+\text{discrepancy\_bps} = \frac{\text{theoretical\_output} - \text{actual\_output}}{\text{theoretical\_output}} \cdot 10{,}000
+$$
+
+Positive → pool **underdelivers** (actual < theoretical); negative → pool **overdelivers**. Anomaly is flagged when `|discrepancy_bps| > threshold`. Direction labels are descriptive (`pool_underdelivers` / `pool_overdelivers`), **not accusatory** — no `pool_skimming`-style verdicts.
+
+**Philosophical framing — protocol library as metadata adapter.** The primitive treats the protocol library as a *metadata adapter* (it tells us reserves, token names, the stated fee) and uses the **invariant directly** as the math source. This is a non-obvious architectural choice: driving the protocol library's solvers to a counterfactual state would be more code, less reliable, and harder to verify. By computing the theoretical output from the closed-form invariant in pure floats and comparing against the pool's reported value, the check is robust to bugs *inside* the protocol library — which is exactly the class of bug it's designed to catch.
+
+## Example
+
+```python
+from defipy import DetectFeeAnomaly
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+result = DetectFeeAnomaly().apply(lp_v2, tokens["ETH"])
+
+print(f"stated_fee_bps:       {result.stated_fee_bps}")
+print(f"test_amount:          {result.test_amount}")
+print(f"theoretical_output:   {result.theoretical_output:.6f}")
+print(f"actual_output:        {result.actual_output:.6f}")
+print(f"discrepancy_bps:      {result.discrepancy_bps:.6e}")
+print(f"direction:            {result.direction}")
+print(f"anomaly_detected:     {result.anomaly_detected}")
+```
+
+<div class="nb-output">{`stated_fee_bps:       30
+test_amount:          10.0
+theoretical_output:   987.158034
+actual_output:        987.158034
+discrepancy_bps:      1.151658e-12
+direction:            pool_underdelivers
+anomaly_detected:     False`}</div>
+
+A clean V2 pool: discrepancy is `~1e-12` bps (float-precision noise), well under the 10-bps threshold, so `anomaly_detected = False`. The `direction` field defaults to `pool_underdelivers` as a tie-breaker when `discrepancy_bps == 0`.
+
+## How this composes
+
+- Independent leaf primitive — does not depend on or compose any other agentic primitive.
+- Composed *into* by ad-hoc agent flows that want a quick consistency check before [`Swap`](/api/primitive/core/swap/) execution.
+
+## See also
+
+- [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — pool-level health snapshot (TVL, reserves, activity)
+- [`DetectRugSignals`](/agentic-primitives/pool-health/detect-rug-signals/) — threshold-based rug-pull detector composed over `CheckPoolHealth`
+- [`DetectMEV`](/agentic-primitives/execution/detect-mev/) — post-trade theoretical-vs-actual check (similar shape, different question)
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — niche V2-only forensic check; LLMs rarely need invariant-vs-contract divergence as a first-pass tool. Composable when explicitly requested.
