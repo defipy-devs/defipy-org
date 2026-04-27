@@ -189,6 +189,27 @@ def normalize_blockquote_math(text: str) -> str:
     return _BLOCKQUOTE_DISPLAY_MATH.sub(r"$$\1$$", text)
 
 
+# Notebook markdown sometimes uses raw LaTeX environments
+# (`\begin{equation} ... \end{equation}`, also `align`, `aligned`, `gather`).
+# MDX parses the leading backslash as JSX, so wrap in $$ ... $$ for KaTeX.
+_LATEX_ENV = re.compile(
+    r"\\begin\{(equation\*?|align\*?|aligned|gather\*?|gathered|cases|matrix|pmatrix|bmatrix)\}"
+    r"(.*?)"
+    r"\\end\{\1\}",
+    re.DOTALL,
+)
+
+
+def normalize_latex_envs(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        env = m.group(1)
+        body = m.group(2).strip()
+        # `equation*` / `equation` / `align` etc. — keep the env *inside* the
+        # display block so KaTeX rendering matches the original.
+        return f"$$\n\\begin{{{env}}}\n{body}\n\\end{{{env}}}\n$$"
+    return _LATEX_ENV.sub(repl, text)
+
+
 # -- cell rendering ------------------------------------------------------
 
 def render_cell(cell: dict[str, Any]) -> str:
@@ -197,6 +218,7 @@ def render_cell(cell: dict[str, Any]) -> str:
         src = cell_source(cell)
         src = rewrite_links(src)
         src = normalize_blockquote_math(src)
+        src = normalize_latex_envs(src)
         return src.rstrip() + "\n"
 
     if ctype == "code":

@@ -1,6 +1,365 @@
 ---
-title: "Withdraw and Swap"
-description: "Coming soon."
+title: "Withdraw-Swap"
+description: "To download notebook to this tutorial, see here"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/medium_articles/withdraw_like_an_og.ipynb)
+
+```python
+import os
+import math as mth
+import numpy as np
+from termcolor import colored
+```
+
+```python
+from uniswappy import *
+```
+
+```python
+user_nm = 'user0'
+eth_amount = 1000
+tkn_amount = 100000
+```
+
+#### Problem Defined
+
+Given the definition of **_constant product trading_** (CPT) as:
+
+$$
+\begin{equation}
+(x-\Delta x)(y - \gamma\Delta y) = L^2
+\end{equation}
+$$
+
+where 
+
+* $x$ -> reserve0 (r0)
+* $y$ -> reserve1 (r1)
+* $\Delta x$ -> swap x (a0)
+* $\Delta y$ -> swap y (a1)
+* $L$ -> total supply
+* $\gamma$ -> fee $\left(ie, \frac{997}{1000} \right)$
+
+We define the **_indexing problem_** via the following linear system of equations:
+
+$$
+\begin{equation}
+\Delta x = \frac{\Delta L x}{L}
+\tag{Eq. 1}
+\end{equation}
+$$
+
+$$
+\begin{equation}
+\Delta y  = \frac{\Delta L  y}{L}
+\tag{Eq. 2}
+\end{equation}
+$$
+
+$$
+\begin{equation}
+\Delta y_{(i)} = \Delta y  + \frac{\gamma \Delta x(y-\Delta y)}{(x - \Delta x) + \gamma \Delta x}
+\tag{Eq. 3}
+\end{equation}
+$$
+
+where 
+
+* $\Delta y_{(i)}$ -> indexed token
+* $\Delta L$ -> liquidity deposit
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount+100, tkn_amount, eth_amount+100, tkn_amount)
+
+print('***\nInitial LP\n***')
+lp.summary()
+
+amt_out = 100
+token_out = eth
+trading_token = tkn
+user_nm1 = 'user0'
+#rate = 0
+
+# Step 1: withdrawal
+p_out = 0.5
+removeLiq = RemoveLiquidity()
+res = removeLiq.apply(lp, token_out, user_nm1, p_out*amt_out)
+
+print('***\nLP post step 1\n***')
+lp.summary()
+
+# Step 2: swap
+out = Swap().apply(lp, trading_token, user_nm1, res[trading_token.token_name])  
+
+print('***\nLP post step 2\n***')
+lp.summary() 
+
+withdrawn = res[eth.token_name] + out 
+
+print('Total withdrawn is {:.6f} + {:.6f} = {:.6f} ETH'.format(p_out*amt_out, out, withdrawn))
+print('Of the requested {} ETH, a total of {:.6f} ETH has been withdrawn when using a 50/50 split'.format(amt_out, withdrawn))
+```
+
+<div class="nb-output">{`***
+Initial LP
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1100.0, TKN = 100000.0
+Liquidity: 10488.088481701516 
+
+***
+LP post step 1
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1050.0, TKN = 95454.54545454546
+Liquidity: 10011.35718707872 
+
+***
+LP post step 2
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1002.4094194662908, TKN = 100000.0
+Liquidity: 10011.35718707872 
+
+Total withdrawn is 50.000000 + 47.590581 = 97.590581 ETH
+Of the requested 100 ETH, a total of 97.590581 ETH has been withdrawn when using a 50/50 split`}</div>
+
+#### Solve Problem
+Using the system of equations outlined in the **_indexing problem_**, Eq. 3 can be rearranged as:
+
+$$
+\begin{equation}
+(\Delta y_{(i)}x) - (\Delta y_{(i)}\Delta x) + (\gamma \Delta y_{(i)} \Delta x) - (\Delta y x) + (\Delta y\Delta x) - (\gamma y\Delta x) = 0
+\end{equation}
+$$
+
+Plug Eq. 1 and Eq. 2 into above, and we get:
+
+$$
+\begin{equation}
+(\Delta y_{(i)} x) - (\frac{\Delta y_{(i)} \Delta L x}{L}) + (\frac{\Delta y_{(i)} \gamma \Delta L x}{L}) - (\frac{\Delta L xy}{L}) + (\frac{\Delta L^2 xy}{L^2}) - (\frac{\Delta L \gamma x y}{L}) = 0
+\end{equation}
+$$
+
+The above equation gets reduced to the following quadratic:
+
+$$
+\begin{equation}
+\Delta L^2 \left( \frac{xy}{L^2} \right) - \Delta L \left(\frac{1000 \Delta y_{(i)} x - 997\Delta y_{(i)} x + 1000xy + 997 xy}{1000L} \right) + \Delta y_{(i)} x = 0
+\end{equation}
+$$
+
+Now, solve for $\Delta L$ using ```calc_lp_settlement```
+
+```python
+def calc_lp_settlement(lp, token_in, itkn_amt):
+
+    if(token_in.token_name == lp.token1):
+        x = UniV3Helper().gwei2dec(lp.reserve0)
+        y = UniV3Helper().gwei2dec(lp.reserve1)
+    else: 
+        x = UniV3Helper().gwei2dec(lp.reserve1)
+        y = UniV3Helper().gwei2dec(lp.reserve0)
+
+    L = UniV3Helper().gwei2dec(lp.total_supply)
+    gamma = 997
+
+    a1 = x*y/L
+    a2 = L
+    a = a1/a2
+    b = (1000*itkn_amt*x - itkn_amt*gamma*x + 1000*x*y + x*y*gamma)/(1000*L);
+    c = itkn_amt*x;
+
+    dL = (b*a2 - a2*mth.sqrt(b*b - 4*a1*c/a2)) / (2*a1);
+    return dL
+```
+
+```python
+eth = ERC20("ETH", "0x09")
+tkn = ERC20("TKN", "0x111")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount+100, tkn_amount, eth_amount+100, tkn_amount)
+lp.summary()
+
+eth_amt = 100
+dL = calc_lp_settlement(lp, eth, eth_amt)
+
+print('A request of {} ETH requires a settlement of {:.6f} LP token'.format(eth_amt, dL))
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1100.0, TKN = 100000.0
+Liquidity: 10488.088481701516 
+
+A request of 100 ETH requires a settlement of 488.787567 LP token`}</div>
+
+```python
+y = UniV3Helper().gwei2dec(lp.reserve0)
+x = UniV3Helper().gwei2dec(lp.reserve1)
+L = UniV3Helper().gwei2dec(lp.total_supply)
+gamma = 997
+
+(dL**2)*x*y/(L*L) - dL*((1000*eth_amt*x - eth_amt*gamma*x + 1000*x*y + x*y*gamma)/(1000*L)) + eth_amt*x
+```
+
+<div class="nb-output">{`-5.587935447692871e-09`}</div>
+
+#### Token Distribution
+
+Using $\Delta L$, we can determine the splitting distribution for withdrawal. Reconsidering Eq. 3, we redefine $\Delta y$ and $\Delta y_{swap}$ by portion $\alpha$, thus:
+
+
+$$
+\begin{equation}
+\Delta y_{(i)} = \Delta y + \Delta y_{swap}
+\end{equation}
+$$
+
+$$
+\begin{equation}
+\Delta y_{(i)} = \alpha \Delta y_{(i)} + (1- \alpha) \Delta y_{(i)}
+\end{equation}
+$$
+
+Therefore, using Eq. 2 we calculate our distribution as:
+
+$$
+\begin{equation}
+\alpha =\frac{\Delta y}{\Delta y_{(i)}}= \frac{\Delta L y}{\Delta y_{(i)} L}
+\end{equation}
+$$
+
+Hence, using the above equation and $L$ from our solver, we can calculate the withdraw distribution $\alpha$ via ```calc_portion```
+
+```python
+def calc_withdraw_portion(lp, token_in, amt):
+    
+    if(token_in.token_name == lp.token1):
+        x = UniV3Helper().gwei2dec(lp.reserve0)
+        y = UniV3Helper().gwei2dec(lp.reserve1)
+    else: 
+        x = UniV3Helper().gwei2dec(lp.reserve1)
+        y = UniV3Helper().gwei2dec(lp.reserve0)
+        
+    L = UniV3Helper().gwei2dec(lp.total_supply)
+    gamma = 997/1000
+
+    dL = calc_lp_settlement(lp, token_in, amt) 
+    dx = dL*x/L
+    dy = dL*y/L
+    aswap = (gamma*dx)*(y-dy)/(x-dx+gamma*dx)
+
+    return dy/amt
+```
+
+```python
+alpha = calc_withdraw_portion(lp, eth, eth_amt)
+print('The correct portion (for step 1) is {:.6f}'.format(alpha))
+```
+
+<div class="nb-output">{`The correct portion (for step 1) is 0.512645`}</div>
+
+### WithdrawSwap Steps
+Finally, lets run through the steps to a ```WithdrawSwap``` and compare above
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount+100, tkn_amount, eth_amount+100, tkn_amount)
+
+print('***\nInitial LP\n***')
+lp.summary()
+
+amt_out = 100
+token_out = eth
+user_nm = 'user0'
+
+# Step 1: withdrawal
+p_out = calc_withdraw_portion(lp, token_out, amt_out)
+removeLiq = RemoveLiquidity()
+res = removeLiq.apply(lp, token_out, user_nm, p_out*amt_out)
+
+print('***\nLP post step 1\n***')
+lp.summary()
+
+# Step 2: swap
+out = Swap().apply(lp, trading_token, user_nm, res[trading_token.token_name])  
+
+print('***\nLP post step 2\n***')
+lp.summary() 
+
+withdrawn = res[eth.token_name] + out 
+
+print('Total withdrawn is {:.6f} + {:.6f} = {:.6f} \
+ETH'.format(p_out*amt_out, out, withdrawn))
+print('Of the requested {} ETH, a total of {:.6f} ETH \
+has been withdrawn'.format(amt_out, withdrawn))
+```
+
+<div class="nb-output">{`***
+Initial LP
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1100.0, TKN = 100000.0
+Liquidity: 10488.088481701516 
+
+***
+LP post step 1
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1048.735527472211, TKN = 95339.59340656463
+Liquidity: 9999.300914574962 
+
+***
+LP post step 2
+***
+Exchange ETH-TKN (LP)
+Reserves: ETH = 999.9999999999999, TKN = 100000.0
+Liquidity: 9999.300914574962 
+
+Total withdrawn is 51.264473 + 48.735527 = 100.000000 ETH
+Of the requested 100 ETH, a total of 100.000000 ETH has been withdrawn`}</div>
+
+#### Final Solution
+Finally, let's check when our solution is integrated into ```WithdrawSwap```
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount+100, tkn_amount, eth_amount+100, tkn_amount)
+lp.summary()
+
+amt_out = 100
+out = WithdrawSwap().apply(lp, eth, user_nm, 100)
+lp.summary() 
+
+print('Total withdrawn is {:.6f} ETH, as per request'.format(out))
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1100.0, TKN = 100000.0
+Liquidity: 10488.088481701516 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 9999.300914574964 
+
+Total withdrawn is 100.000000 ETH, as per request`}</div>

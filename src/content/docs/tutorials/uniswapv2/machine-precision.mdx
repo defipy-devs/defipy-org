@@ -1,6 +1,217 @@
 ---
-title: "Machine Precision (V2)"
-description: "Coming soon."
+title: "Machine Precision"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+* Machine precision tests for solidity vetting
+* To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/tutorials/machine_precision_univ2.ipynb)
+
+```python
+from defipy import *
+```
+
+```python
+user_nm = 'user_machine_check'
+eth_amount = UniV3Helper().dec2gwei(1000)
+dai_amount = UniV3Helper().dec2gwei(100000)
+```
+
+### 1. Check abstract interface
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+
+AddLiquidity().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(10))
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Reserves: ETH = 1010000000000000000000, DAI = 101000000000000000000000
+Liquidity: 10100000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+
+RemoveLiquidity().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(100))
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Reserves: ETH = 900000000000000000000, DAI = 90000000000000000000000
+Liquidity: 9000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+
+Swap().apply(lp, dai, user_nm, UniV3Helper().dec2gwei(1000))
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Reserves: ETH = 990128419656029387011, DAI = 101000000000000000000000
+Liquidity: 10000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+
+WithdrawSwap().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(10))
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Reserves: ETH = 989999999999999999241, DAI = 100000000000000000000000
+Liquidity: 9949799447405356572672`}</div>
+
+### 2. Check quotes
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Reserves: ETH = 1000000000000000000000, DAI = 100000000000000000000000
+Liquidity: 10000000000000000000000`}</div>
+
+```python
+p_eth = LPQuote().get_price(lp, eth)
+p_dai = LPQuote().get_price(lp, dai)
+print(f'The price of {eth.token_name} in {dai.token_name} is {p_eth}')
+print(f'The price of {dai.token_name} in {eth.token_name} is {p_dai}')
+```
+
+<div class="nb-output">{`The price of ETH in DAI is 100.0
+The price of DAI in ETH is 0.01`}</div>
+
+```python
+amt_eth = LPQuote(include_fee = True).get_amount(lp, eth, UniV3Helper().dec2gwei(1))
+amt_dai = LPQuote(include_fee = True).get_amount(lp, dai, UniV3Helper().dec2gwei(1))
+print(f'{UniV3Helper().dec2gwei(1)} {eth.token_name} token is worth {amt_dai} {dai.token_name} after swap fees')
+print(f'{UniV3Helper().dec2gwei(1)} {dai.token_name} token is worth {amt_eth} {eth.token_name} after swap fees')
+```
+
+<div class="nb-output">{`1000000000000000000 ETH token is worth 9969900600091018 DAI after swap fees
+1000000000000000000 DAI token is worth 99600698103990321650 ETH after swap fees`}</div>
+
+```python
+amt_eth = LPQuote(False).get_amount_from_lp(lp, eth, UniV3Helper().dec2gwei(1))
+amt_dai = LPQuote().get_amount_from_lp(lp, eth, UniV3Helper().dec2gwei(1))
+print(f'{UniV3Helper().dec2gwei(1)} LP token is worth {amt_eth} {eth.token_name}')
+print(f'{UniV3Helper().dec2gwei(1)} LP token is worth {amt_dai} {dai.token_name}')
+```
+
+<div class="nb-output">{`1000000000000000000 LP token is worth 199690059907017973 ETH
+1000000000000000000 LP token is worth 1.9969005990701797e+19 DAI`}</div>
+
+### 3. Classic tree config
+
+```python
+tkn_amount = UniV3Helper().dec2gwei(100000)  
+usdt_amount = UniV3Helper().dec2gwei(100000)  
+
+tkn_nm = 'USDC'
+itkn_nm = 'iUSDC'
+usdt_nm = 'USDT'
+iusdt_nm = 'iUSDT'
+```
+
+```python
+usdt1 = ERC20(usdt_nm, "0x111")
+tkn1 = ERC20(tkn_nm, "0x09")
+exchg_data = UniswapExchangeData(tkn0 = tkn1, tkn1 = usdt1, symbol="LP", address="0x011", precision = UniswapExchangeData.TYPE_GWEI)
+
+iVault1 = IndexVault('iVault1', "0x7")
+factory = UniswapFactory(f"{tkn_nm} pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+Join().apply(lp, user_nm, tkn_amount, usdt_amount)
+
+tkn2 = ERC20(tkn_nm, "0x09")
+itkn1 = IndexERC20(itkn_nm, "0x09", tkn1, lp)
+exchg_data1 = UniswapExchangeData(tkn0 = tkn2, tkn1 = itkn1, symbol="LP1", address="0x012", precision = UniswapExchangeData.TYPE_GWEI)
+lp1 = factory.deploy(exchg_data1)
+JoinTree().apply(lp1, user_nm, iVault1, UniV3Helper().dec2gwei(10000))
+
+# Re-balance LP price after JoinTree
+SwapDeposit().apply(lp, usdt1, user_nm, lp.get_reserve(tkn1) - lp.get_reserve(usdt1))
+
+lp.summary()
+lp1.summary()
+```
+
+<div class="nb-output">{`Exchange USDC-USDT (LP)
+Reserves: USDC = 109999999999999999072351, USDT = 109999999999999999072352
+Liquidity: 109984620658241662373796 
+
+Exchange USDC-iUSDC (LP1)
+Reserves: USDC = 9972071706380652773376, iUSDC = 4873552747221099553490
+Liquidity: 6971328242172880813044`}</div>

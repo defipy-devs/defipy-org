@@ -1,6 +1,849 @@
 ---
-title: "Uniswap V2"
-description: "Coming soon."
+title: "Abstract Interface (V2)"
+description: "To download notebook to this tutorial, see here"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+* **📘 Join**: joins X and Y amounts to pool 
+* **📘 Swap**: swaps X for Y (and vice verse) 
+* **📘 AddLiquidity**: double-sided deposit; adds liquidity using only X or Y amounts 
+* **📘 RemoveLiquidity**: double-sided withdrawal; removes liquidity using only X or Y amounts 
+* **📘 SwapDeposit**: single-sided deposit; deposit exact x or y by coming to pool with just one token from trading pair to make a deposit 
+* **📘 WithdrawSwap**: single-sided withdrawal; withdraw exact x or y by leaving pool with desired token from trading pair
+* **📘 LPQuote**: Quote liquidity pool, via either: (a) token price; (b) LP token amount to token amount; or (c) token amount to LP token amount
+
+To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/tutorials/uniswap_v2.ipynb)
+
+```python
+from defipy import *
+```
+
+```python
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+```
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+expected_amount_out = WithdrawSwap().apply(lp, eth, user_nm, 1)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 999.0, TKN = 100000.0
+Liquidity: 9994.991239989282`}</div>
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0`}</div>
+
+### 📘 Join
+
+* **Class**: 📘 ``defipy.process.Join`` 
+    * **Purpose**: Simplifies initial liquidity addition to Uniswap V2 pools.
+    * **Methods**:
+        * ``apply(pool, user: str, amount0: float, amount1: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance (e.g., created via Primitive Interface).
+                * ``user``: User address.
+                * ``amount0``: Amount of token0.
+                * ``amount1``: Amount of token1.
+        * **Output**: Liquidity added to the pool.
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0`}</div>
+
+### 📘 Swap
+
+* **Class**: 📘 ``defipy.process.Swap`` 
+    * **Purpose**: Facilitates token swaps on Uniswap V2 pools with slippage tolerance and deadline control.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform the swap on.
+                * ``token_in``: ERC20 token to swap from.
+                * ``user``: User address (string) executing the swap.
+                * ``amount_in``: Amount of `token_in` to swap.
+        * **Output**: Executes the swap from `token_in` to `token_out` for the user
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+out = Swap().apply(lp, tkn, user_nm, 1000)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 990.1284196560293, TKN = 101000.0
+Liquidity: 10000.0`}</div>
+
+**Swap: tkn1 for tkn0**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+out = Swap().apply(lp, eth, user_nm, 10)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 99012.84196560294
+Liquidity: 10000.0`}</div>
+
+**Swap: lp token for tkn1**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = lp_tkn.get_liquidity()
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, lp_tkn_amount, tkn_amount)
+lp2.summary()
+
+out = Swap().apply(lp2, lp_tkn, user_nm, 100)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10000.0, TKN = 100000.0
+Liquidity: 31622.776601683792 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10100.0, TKN = 99012.84196560294
+Liquidity: 31622.776601683792`}</div>
+
+**Swap: lp token for tkn0**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = lp_tkn.get_liquidity()
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, lp_tkn_amount, tkn_amount)
+lp2.summary()
+
+out = Swap().apply(lp2, tkn2, user_nm, 100)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10000.0, TKN = 100000.0
+Liquidity: 31622.776601683792 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 9990.039930189601, TKN = 100100.0
+Liquidity: 31622.776601683792`}</div>
+
+### 📘 AddLiquidity
+
+* **Class**: 📘 ``defipy.process.AddLiquidity`` 
+    * **Purpose**: Double-sided deposit; Adds liquidity to existing Uniswap V2 pools, handling token amounts and liquidity tokens minting; input one token amount and the other token amount is calculated
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform token addition.
+                * ``token_in``: ERC20 token to add.
+                * ``user``: User address (string) providing liquidity.
+                * ``amount_in``: Amount of `token_in` to add; the other token amount is calculated
+        * **Output**: Adds the specified token amounts to the pool and mints liquidity tokens to the user.
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+AddLiquidity().apply(lp, eth, user_nm, 10)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 101000.0
+Liquidity: 10100.0`}</div>
+
+**Add: tkn0 and determine tkn1**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+AddLiquidity().apply(lp, tkn, user_nm, 1000)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 101000.0
+Liquidity: 10100.0`}</div>
+
+**Add: LP based on tkn2**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = lp_tkn.get_liquidity()
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, lp_tkn_amount, tkn_amount)
+lp2.summary()
+
+AddLiquidity().apply(lp2, tkn2, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10000.0, TKN = 100000.0
+Liquidity: 31622.776601683792 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10001.0, TKN = 100010.0
+Liquidity: 31625.93887934396`}</div>
+
+**Add: LP based on lp_tkn**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = lp_tkn.get_liquidity()
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, lp_tkn_amount, tkn_amount)
+lp2.summary()
+
+AddLiquidity().apply(lp2, lp_tkn, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10000.0, TKN = 100000.0
+Liquidity: 31622.776601683792 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 10010.0, TKN = 100100.0
+Liquidity: 31654.399378285478`}</div>
+
+### 📘 RemoveLiquidity
+
+* **Class**: 📘 ``defipy.process.RemoveLiquidity`` 
+    * **Purpose**: Double-sided withdraw; Removes liquidity from Uniswap V2 pools, returning underlying tokens to the user; input one token amount and the other token amount is calculated
+    * **Methods**:
+        * ``apply(pool, token_out: ERC20, user: str, amount_out: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform token removal.
+                * ``token_out``: ERC20 token to remove.
+                * ``user``: User address (string) withdrawing liquidity.
+                * ``amount_out``: Amount of `token_out` to remove; the other token is calculated
+        * **Output**: Removes the specified liquidity tokens and transfers the corresponding amounts of underlying tokens back to the user.
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+RemoveLiquidity().apply(lp, eth, user_nm, 999)
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0`}</div>
+
+<div class="nb-output">{`{'ETH': 999.0, 'TKN': 99900.0}`}</div>
+
+**Remove: tkn0 and determine tkn1**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+RemoveLiquidity().apply(lp, tkn, user_nm, 100)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 999.0, TKN = 99900.0
+Liquidity: 9990.0`}</div>
+
+**Remove: LP based on tkn2**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = 1000
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+RemoveLiquidity().apply(lp2, tkn2, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 990.0, TKN = 990.0
+Liquidity: 990.0`}</div>
+
+**Remove: LP based on lp_tkn**
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = 1000
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+RemoveLiquidity().apply(lp2, lp_tkn, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 990.0, TKN = 990.0
+Liquidity: 990.0`}</div>
+
+### 📘 SwapDeposit
+
+* **Class**: 📘 ``defipy.process.SwapDeposit`` 
+    * **Purpose**: Single-sided deposit; combines token swapping and liquidity deposit into a single operation on Uniswap V2 pools.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * `pool`: Pool instance from which liquidity will be removed.
+                * `token_in`: ERC20 object of the token to remove from.
+                * `user`: User address (string) withdrawing liquidity.
+                * `amount_in`: Amount of token to swap in.
+        * **Output**: Executes the swap of `token_in` and deposits the specified amounts of token0 and token1 into the pool as liquidity for the user.
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+SwapDeposit().apply(lp, tkn, user_nm, 100)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100100.0
+Liquidity: 10004.991241237401`}</div>
+
+**Swap exact tkn0 for tkn1**
+
+* deposit desired token -> perform 50% swap ->  perform 50/50 deposit
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+amount_out = SwapDeposit().apply(lp, eth, user_nm, 1)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1001.0, TKN = 100000.0
+Liquidity: 10004.991241237401`}</div>
+
+**Deposit: LP with only tkn2**
+
+* deposit desired token -> perform 50% swap ->  perform 50/50 deposit
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+SwapDeposit().apply(lp2, tkn2, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1010.0
+Liquidity: 1004.980069557936`}</div>
+
+**Deposit: LP with only lp_tkn**
+
+* deposit desired token -> perform 50% swap ->  perform 50/50 deposit
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = 1000
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+SwapDeposit().apply(lp2, lp_tkn, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1010.0, TKN = 1000.0
+Liquidity: 1004.980069557936`}</div>
+
+### 📘 WithdrawSwap
+
+* **Class**: 📘 ``defipy.process.WithdrawSwap`` 
+    * **Purpose**: Single-sided withdraw; facilitates withdrawing liquidity from a Uniswap V2 pool and swapping the withdrawn tokens into a desired token.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * `pool`: Pool instance from which liquidity will be removed.
+                * `token_in`: ERC20 object of the token to remove from.
+                * `user`: User address (string) withdrawing liquidity.
+                * `amount_in`:Amount of token to swap out.
+        * **Output**: Removes liquidity from the pool, swaps the underlying tokens to `token_out`, and transfers the resulting tokens to the user, respecting slippage and deadline constraints.
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+expected_amount_out = WithdrawSwap().apply(lp, eth, user_nm, 1)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 999.0, TKN = 100000.0
+Liquidity: 9994.991239989282`}</div>
+
+**Withdraw: exact tkn0**
+
+* withdraw LP based upon expected amount of tkn
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+expected_amount_out = WithdrawSwap().apply(lp, tkn, user_nm, 100)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 99900.0
+Liquidity: 9994.991239989282`}</div>
+
+**Withdraw: LP based upon expected amount of tkn2**
+
+* perform 50/50 withdraw  -> swap remaining 50% -> return desired token
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = 1000
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+WithdrawSwap().apply(lp2, tkn2, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 990.0
+Liquidity: 994.9799447405356`}</div>
+
+**Withdraw: LP based upon expected amount of tkn2**
+
+* perform 50/50 withdraw  -> swap remaining 50% -> return desired token
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp_tkn = factory.deploy(exchg_data)
+
+Join().apply(lp_tkn, user_nm, eth_amount, tkn_amount)
+lp_tkn.summary()
+
+tkn2 = ERC20("TKN", "0x112")
+lp_tkn_amount = 1000
+exchg_data = UniswapExchangeData(tkn0 = lp_tkn, tkn1 = tkn2, symbol="LP2", address="0x012")
+lp2 = factory.deploy(exchg_data)
+
+Join().apply(lp2, user_nm, eth_amount, lp_tkn_amount)
+lp2.summary()
+
+WithdrawSwap().apply(lp2, lp_tkn, user_nm, 10)
+lp2.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 1000.0, TKN = 1000.0
+Liquidity: 1000.0 
+
+Exchange ETHTKN-LP-TKN (LP2)
+Reserves: ETHTKN-LP = 990.0, TKN = 1000.0
+Liquidity: 994.9799447405356`}</div>
+
+### 📘 LPQuote
+
+* **Class**: 📘 ``defipy.cpt.index.LPQuote`` 
+    * **Purpose**: Liquidity pool token quotes (ie, price, reserve and liquidity).
+    * **Methods**:
+        * ``get_price(pool, token_in: ERC20)``
+        * ``get_amount(pool, token_in: ERC20, amount_tkn: float)``
+        * ``get_amount_from_lp(pool, token_in: ERC20, amount_lp: float)``
+        * ``get_lp_from_amount(pool, token_in: ERC20, amount_tkn: float)``
+
+```python
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0`}</div>
+
+**Retrieve LP prices**
+
+```python
+p_eth = LPQuote().get_price(lp, eth)
+p_tkn = LPQuote().get_price(lp, tkn)
+print(f'The price of {eth.token_name} in {tkn.token_name} is {p_eth}') 
+print(f'The price of {tkn.token_name} in {eth.token_name} is {p_tkn}')
+```
+
+<div class="nb-output">{`The price of ETH in TKN is 100.0
+The price of TKN in ETH is 0.01`}</div>
+
+**Retrieve token settlement amount given opposing token amount**
+
+```python
+amt_eth = LPQuote(include_fee = True).get_amount(lp, eth, 1)
+amt_tkn = LPQuote(include_fee = True).get_amount(lp, tkn, 1)
+print(f'1 {eth.token_name} token is worth {amt_tkn} {tkn.token_name} after swap fees')
+print(f'1 {tkn.token_name} token is worth {amt_eth} {eth.token_name} after swap fees')
+```
+
+<div class="nb-output">{`1 ETH token is worth 0.009969900600091019 TKN after swap fees
+1 TKN token is worth 99.60069810399033 ETH after swap fees`}</div>
+
+**Retrieve rebased token settlement amount given amount of LP token**
+
+```python
+amt_eth = LPQuote(False).get_amount_from_lp(lp, eth, 1)
+amt_tkn = LPQuote().get_amount_from_lp(lp, eth, 1)
+print(f'1 LP token is worth {amt_eth} {eth.token_name}')
+print(f'1 LP token is worth {amt_tkn} {tkn.token_name}')
+```
+
+<div class="nb-output">{`1 LP token is worth 0.19969005990701796 ETH
+1 LP token is worth 19.969005990701795 TKN`}</div>
+
+**Retrieve LP token settlement amount given amount of asset token**
+
+```python
+amt_eth_lp = LPQuote(False).get_lp_from_amount(lp, eth, 1)
+amt_tkn_lp = LPQuote(False).get_lp_from_amount(lp, tkn, 1)
+print(f'1 {eth.token_name} token is worth {amt_eth_lp} LP tokens')
+print(f'1 {tkn.token_name} token is worth {amt_tkn_lp} LP tokens')
+```
+
+<div class="nb-output">{`1 ETH token is worth 5.00876001071831 LP tokens
+1 TKN token is worth 0.05007523748156423 LP tokens`}</div>

@@ -1,6 +1,313 @@
 ---
-title: "Swap and Deposit"
-description: "Coming soon."
+title: "Swap-Deposit"
+description: "To download notebook to this tutorial, see here"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/medium_articles/deposit_like_a_baller.ipynb)
+
+```python
+import os
+import math
+import numpy as np
+from termcolor import colored
+```
+
+```python
+from uniswappy import *
+```
+
+```python
+user_nm = 'user0'
+eth_amount = 1000
+usdc_amount = 1000000
+```
+
+#### Problem Defined
+
+* A ```SwapDeposit``` is where a certain amount of a specific token is deposited into the LP under one operation
+* Includes two steps:
+    * (step 1) perform approx. 50% swap for opposing token
+    * (step 2) using amt from step 1, perform 1:1 deposit
+* A portion of the incoming funds are swapped to achieve equal portions of both assets
+* These portions are then deposited into the LP
+* To ensure all the funds are deposited, we must determine the portion ($\alpha$) of $s_{in}$ that must first get swapped
+
+$$
+\begin{equation}
+\Delta x_{sd} = \Delta x_{swap} + \Delta x_{deposit}
+\end{equation}
+$$
+
+$$
+\begin{equation}
+\Delta x_{sd} = \alpha \Delta x_{sd} + \frac{\Delta y_{s}(x+\Delta x_{sd})}{y - \Delta y_{s}}
+\end{equation}
+$$
+
+Follows this system of equations:
+
+$$
+\begin{equation}
+\Delta y_{s} = \frac{997 y \alpha \Delta x }{1000x + 997\alpha\Delta x }
+\tag{Eq. 1}
+\end{equation}
+$$
+
+$$
+\begin{equation}
+\Delta x_{sd} = \alpha\Delta x_{sd}   + \frac{\Delta y_{s}(x + \alpha\Delta x_{sd} )}{y - \Delta y_{s}}
+\tag{Eq. 2}
+\end{equation}
+$$
+
+where 
+
+* $\Delta x_{sd}$ -> amt token in 
+* $\Delta y_{s}$ -> amt opposing token out after swap
+* $\alpha$ -> portion of $\Delta x$ swapped in
+* x -> reserve0
+* y -> reserve1
+
+Let's highlight why the above considerations are important ...
+
+```python
+eth = ERC20("ETH", "0x09")
+usdc = ERC20("USDC", "0x111")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = usdc, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount, usdc_amount, eth_amount, usdc_amount)
+
+print('***\nInitial LP\n***')
+lp.summary()
+
+s_in = 100
+alpha = 0.5
+s_out = Swap().apply(lp, eth, user_nm, alpha*s_in)
+
+print('***\nLP post step 1\n***')
+lp.summary()
+    
+balance0 = alpha*s_in
+balance1 = lp.quote(balance0, lp.reserve0, lp.reserve1)
+lp.add_liquidity(user_nm, balance0, balance1, balance0, balance1) 
+
+print('***\nLP post step 2\n***')
+lp.summary() 
+
+
+print('Given {} initial ETH:'.format(s_in))
+print('  (step 1) {} ETH must first get swapped for {} '.format(alpha*s_in, s_out))
+print('  (step 2) The received TKN gets deposited along with the remaining {} ETH'.format(balance0))
+
+print('\nTotal deposited is {:.6f} + {:.6f} = {:.6f} ETH:'.format(alpha*s_in,  balance0, alpha*s_in + balance0))
+print('However, we have {} unaccounted USDC which need to be considered when using a 50/50 split'.format(colored(str(usdc_amount-lp.get_reserve(usdc)), 'red', attrs=['bold'])))
+```
+
+<div class="nb-output">{`***
+Initial LP
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1000.0, USDC = 1000000.0
+Liquidity: 31622.776601683792 
+
+***
+LP post step 1
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1050.0, USDC = 952517.026241844
+Liquidity: 31622.776601683792 
+
+***
+LP post step 2
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1100.0, USDC = 997874.9798724081
+Liquidity: 33128.623106525876 
+
+Given 100 initial ETH:
+  (step 1) 50.0 ETH must first get swapped for 47482.973758155924 
+  (step 2) The received TKN gets deposited along with the remaining 50.0 ETH
+
+Total deposited is 50.000000 + 50.000000 = 100.000000 ETH:
+However, we have [1m[31m2125.02012759191[0m unaccounted USDC which need to be considered when using a 50/50 split`}</div>
+
+#### Solve Problem
+Let's now address this problem ...
+
+```python
+usdc = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = usdc, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount, usdc_amount, eth_amount, usdc_amount)
+
+s_in = 100
+alpha = 0.5
+y = lp.get_reserve(usdc)
+x = lp.get_reserve(eth)
+```
+
+Plug above into equation (1), and see how many TKN we get when 50% of ETH is swapped in for step (1)
+
+```python
+s_out = (997*alpha*s_in*y)/(1000*x + 997*alpha*s_in)
+print('For {} ETH, we get {:.2f} TKN with a 50% portion'.format(s_in, s_out))
+```
+
+<div class="nb-output">{`For 100 ETH, we get 47482.97 TKN with a 50% portion`}</div>
+
+Now, lets check how many ETH gets SwapDeposited in when 50% of ETH is swapped in for step (1)
+
+```python
+a1_out = alpha*s_in + s_out*(x + alpha*s_in)/(y - s_out)
+print('Instead of {} ETH, we get {:.2f} ETH under a 50% portion'.format(s_in, a1_out))
+```
+
+<div class="nb-output">{`Instead of 100 ETH, we get 102.34 ETH under a 50% portion`}</div>
+
+We can see that there is an imbalance in the system under a 50% distribution for step (1); 
+* we need to solve the system above for $\alpha$ to get the proper distribution
+* plug (1) into (2) and we get:
+
+
+$$
+\begin{equation}
+\Delta x = \alpha\Delta x + \left(\frac{997 y\alpha\Delta x}{1000x + 997\alpha\Delta x} \right) \left(\frac{ x + \alpha\Delta x}{y - \frac{997 y \alpha \Delta x}{1000x + 997\alpha\Delta x}} \right)
+\end{equation}
+$$
+
+reduces to: 
+
+$$
+\begin{equation}
+\alpha^2 \frac{997 \Delta x^2}{1000x} + \alpha\frac{1997\Delta x}{1000} - \Delta x = 0
+\end{equation}
+$$
+
+Now, solve for, and we can calculate the correct distribution using calc_deposit_dist
+
+```python
+def calc_deposit_portion(lp, token_in, dx):
+
+    tokens = lp.factory.token_from_exchange[lp.name]
+    if(token_in.token_name == lp.token0):
+        tkn_supply = lp.get_reserve(tokens[lp.token0])
+    else:    
+        tkn_supply = lp.get_reserve(tokens[lp.token1])
+            
+    a = 997*(dx**2)/(1000*tkn_supply)
+    b = dx*(1997/1000)
+    c = -dx
+
+    alpha = -(b - np.sqrt(b*b - 4*a*c)) / (2*a)
+    return alpha
+```
+
+```python
+alpha = calc_deposit_portion(lp, eth, s_in)
+print('The correct swap distrbution (for step 1) is {}'.format(alpha))
+```
+
+<div class="nb-output">{`The correct swap distrbution (for step 1) is 0.4888217399419355`}</div>
+
+Now, check against our reduced quadratic, and we should expect to get 0
+
+```python
+997*(alpha**2)*(s_in**2)/(1000*x) + alpha*s_in*(1997/1000) - s_in
+```
+
+<div class="nb-output">{`-5.684341886080802e-14`}</div>
+
+#### Final Steps
+Finally, lets run through the steps to a ```SwapDeposit``` and compare above
+
+```python
+usdc = ERC20("USDC", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = usdc, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount, usdc_amount, eth_amount, usdc_amount)
+
+print('***\nInitial LP\n***')
+lp.summary()
+
+s_in = 100
+alpha = calc_deposit_portion(lp, eth, s_in)
+s_out = Swap().apply(lp, eth, user_nm, alpha*s_in)
+
+print('***\nLP post step 1\n***')
+lp.summary()
+    
+balance1 = s_out
+balance0 = s_in-alpha*s_in 
+lp.add_liquidity(user_nm, balance0, balance1, balance0, balance1) 
+
+print('***\nLP post step 2\n***')
+lp.summary() 
+
+
+print('Given {} initial ETH:'.format(s_in))
+print('  (step 1) {} ETH must first get swapped for {} USDC'.format(alpha*s_in, s_out))
+print('  (step 2) The received USDC gets deposited along with the remaining {} ETH'.format(balance0))
+
+print('\nTotal deposited is {:.6f} + {:.6f} = {:.6f} ETH:'.format(alpha*s_in,  balance0, alpha*s_in + balance0))
+```
+
+<div class="nb-output">{`***
+Initial LP
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1000.0, USDC = 1000000.0
+Liquidity: 31622.776601683792 
+
+***
+LP post step 1
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1048.8821739941936, USDC = 953529.2490856305
+Liquidity: 31622.776601683792 
+
+***
+LP post step 2
+***
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1100.0, USDC = 1000000.0
+Liquidity: 33163.92929950274 
+
+Given 100 initial ETH:
+  (step 1) 48.88217399419355 ETH must first get swapped for 46470.75091436945 USDC
+  (step 2) The received USDC gets deposited along with the remaining 51.11782600580645 ETH
+
+Total deposited is 48.882174 + 51.117826 = 100.000000 ETH:`}</div>
+
+#### Final Check
+Finally, let's check when our solution is integrated into ```SwapDeposit```
+
+```python
+usdc = ERC20("USDC", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = usdc, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+lp.add_liquidity(user_nm, eth_amount, usdc_amount, eth_amount, usdc_amount)
+lp.summary()
+
+s_in = 100
+dep = SwapDeposit().apply(lp, eth, user_nm, s_in)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-USDC (LP)
+Reserves: ETH = 1000.0, USDC = 1000000.0
+Liquidity: 31622.776601683792 
+
+Exchange ETH-USDC (LP)
+Reserves: ETH = 1100.0, USDC = 1000000.0
+Liquidity: 33163.92929950274`}</div>
