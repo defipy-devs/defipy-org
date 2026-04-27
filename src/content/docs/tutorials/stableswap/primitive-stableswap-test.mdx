@@ -1,6 +1,361 @@
 ---
-title: "Primitive Stableswap Test"
-description: "Coming soon."
+title: "Primitive Interface"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+```python
+import json
+import numpy as np
+from decimal import Decimal
+```
+
+```python
+from defipy import *
+```
+
+#### Parameters
+
+```python
+USER = 'user_test'
+
+AMPL_COEFF = 2000 
+
+amt_dai = 79566307.559825807715868071
+decimal_dai = 18
+
+amt_usdc = 81345068.187939
+decimal_usdc = 6
+
+amt_usdt = 55663250.772939
+decimal_usdt = 6
+```
+
+#### Tokens
+
+```python
+dai = ERC20("DAI", "0xA0b", decimal_dai)
+dai.deposit(None, amt_dai)
+
+usdc = ERC20("USDC", "0xf93", decimal_usdc)
+usdc.deposit(None, amt_usdc)
+
+usdt = ERC20("USDT", "0xd7c", decimal_usdt)
+usdt.deposit(None, amt_usdt)
+```
+
+```python
+sgrp = StableswapVault()
+sgrp.add_token(dai)
+sgrp.add_token(usdc)
+sgrp.add_token(usdt)
+```
+
+#### Join Stableswap Pool with all Assets
+
+```python
+sfactory = StableswapFactory("Pool factory", "0x2")
+exchg_data = StableswapExchangeData(vault = sgrp, symbol="LP", address="0x011")
+lp = sfactory.deploy(exchg_data)
+lp.join_pool(sgrp, AMPL_COEFF, USER)
+lp.summary()
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79566307.55982581, USDC = 81345068.187939, USDT = 55663250.772939
+Liquidity: 216573027.91811988`}</div>
+
+#### Price: USDC/DAI and DAI/USDC
+
+```python
+p_usdc_dai = lp.get_price(usdc, dai)
+p_dai_usdc = lp.get_price(dai, usdc)
+
+print(f'Price of USDC/DAI is {p_usdc_dai} and DAI/USDC is {p_dai_usdc}')
+```
+
+<div class="nb-output">{`Price of USDC/DAI is 0.9999896456022903 and DAI/USDC is 1.0000103545049244`}</div>
+
+#### Swap: USDC for USDT
+
+```python
+usdc_before = lp.get_reserve(usdc)
+usdt_before = lp.get_reserve(usdt)
+
+amt_tkn_in = 10000
+tkn_in = usdc
+tkn_out = usdt
+res = lp.swap(amt_tkn_in, tkn_in, tkn_out, USER)
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was swapped for {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`10000 USDC was swapped for 9996.862748 USDT`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+usdc_check = lp.get_reserve(usdc)-amt_tkn_in
+usdt_check = lp.get_reserve(usdt)+res['tkn_out_amt']
+
+usdc_test = 'PASS' if {usdc_before == usdc_check} else 'FAIL'
+usdt_test = 'PASS' if {usdt_before == usdt_check} else 'FAIL'
+print(f'Liquidity Leak (USDC): {usdc_test}')
+print(f'Liquidity Leak (USDT): {usdt_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79566307.55982581, USDC = 81355068.187939, USDT = 55653253.910191
+Liquidity: 216573027.91811988 
+
+Liquidity Leak (USDC): PASS
+Liquidity Leak (USDT): PASS`}</div>
+
+#### Swap: USDC for DAI
+
+```python
+usdc_before = lp.get_reserve(usdc)
+dai_before = lp.get_reserve(dai)
+
+amt_tkn_in = 10000
+tkn_in = usdc
+tkn_out = dai
+res = lp.swap(amt_tkn_in, tkn_in, tkn_out, USER)
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was swapped for {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`10000 USDC was swapped for 9998.895308918858 DAI`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+usdc_check = lp.get_reserve(usdc)-amt_tkn_in
+dai_check = lp.get_reserve(dai)+res['tkn_out_amt']
+
+usdc_test = 'PASS' if {usdc_before == usdc_check} else 'FAIL'
+dai_test = 'PASS' if {dai_before == dai_check} else 'FAIL'
+print(f'Liquidity Leak (USDC): {usdc_test}')
+print(f'Liquidity Leak (DAI): {dai_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79556308.6645169, USDC = 81365068.187939, USDT = 55653253.910191
+Liquidity: 216573027.91811988 
+
+Liquidity Leak (USDC): PASS
+Liquidity Leak (DAI): PASS`}</div>
+
+#### Add Liquidity: USDT
+
+```python
+usdt_before = lp.get_reserve(usdt)
+
+amt_tkn_in = 10000
+tkn_in = usdt
+res = lp.add_liquidity(amt_tkn_in, tkn_in, USER)
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was deposited for {res['liquidity_amt_in']} LP tokens")
+```
+
+<div class="nb-output">{`10000 USDT was deposited for 10000.919116999057 LP tokens`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+usdt_check = lp.get_reserve(usdt)-amt_tkn_in
+
+usdt_test = 'PASS' if {usdt_before == usdc_check} else 'FAIL'
+print(f'Liquidity Leak (USDT): {usdt_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79556308.6645169, USDC = 81365068.187939, USDT = 55663253.910191
+Liquidity: 216583028.83723688 
+
+Liquidity Leak (USDT): PASS`}</div>
+
+#### Add Liquidity: DAI
+
+```python
+amt_tkn_in = 10000
+tkn_in = dai
+dai_before = lp.get_reserve(dai)
+res = lp.add_liquidity(amt_tkn_in, tkn_in, USER)
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was deposited for {res['liquidity_amt_in']} LP tokens")
+```
+
+<div class="nb-output">{`10000 DAI was deposited for 9998.968444705135 LP tokens`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+dai_check = lp.get_reserve(dai)-amt_tkn_in
+
+dai_test = 'PASS' if {dai_before == dai_check} else 'FAIL'
+print(f'Liquidity Leak (USDT): {dai_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79566308.6645169, USDC = 81365068.187939, USDT = 55663253.910191
+Liquidity: 216593027.8056816 
+
+Liquidity Leak (USDT): PASS`}</div>
+
+#### Remove Liquidity: DAI
+
+```python
+amt_lp_out = 250000
+tkn_out = dai
+dai_before = lp.get_reserve(dai)
+lp_amt_before = lp.total_supply
+res = lp.remove_liquidity(amt_lp_out, tkn_out, USER)
+
+print(f"{amt_lp_out} LP tokens as removed for {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`250000 LP tokens as removed for 250001.94300082736 DAI`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+dai_check = lp.get_reserve(dai)-res['tkn_out_amt']
+lp_amt_check = lp.total_supply - amt_lp_out
+
+dai_test = 'PASS' if {dai_before == dai_check} else 'FAIL'
+lp_amt_test = 'PASS' if {lp_amt_before == lp_amt_check} else 'FAIL'
+print(f'Liquidity Leak (DAI): {dai_test}')
+print(f'Liquidity Leak (LP AMT): {lp_amt_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79316306.72151607, USDC = 81365068.187939, USDT = 55663253.910191
+Liquidity: 216343027.8056816 
+
+Liquidity Leak (DAI): PASS
+Liquidity Leak (LP AMT): PASS`}</div>
+
+#### Remove Liquidity: USDC
+
+```python
+amt_lp_out = 500000
+tkn_out = usdc
+usdc_before = lp.get_reserve(usdc)
+lp_amt_before = lp.total_supply
+res = lp.remove_liquidity(amt_lp_out, tkn_out, USER)
+
+print(f"{amt_lp_out} LP tokens as removed for {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`500000 LP tokens as removed for 500009.469211 USDC`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+usdc_check = lp.get_reserve(usdc)-res['tkn_out_amt']
+lp_amt_check = lp.total_supply - amt_lp_out
+
+usdc_test = 'PASS' if {usdc_before == usdc_check} else 'FAIL'
+lp_amt_test = 'PASS' if {lp_amt_before == lp_amt_check} else 'FAIL'
+print(f'Liquidity Leak (USDC): {usdc_test}')
+print(f'Liquidity Leak (LP AMT): {lp_amt_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79316306.72151607, USDC = 80865058.718728, USDT = 55663253.910191
+Liquidity: 215843027.8056816 
+
+Liquidity Leak (USDC): PASS
+Liquidity Leak (LP AMT): PASS`}</div>
+
+#### Remove Liquidity: USDT
+
+```python
+amt_lp_out = 500000
+tkn_out = usdt
+usdt_before = lp.get_reserve(usdt)
+lp_amt_before = lp.total_supply
+res = lp.remove_liquidity(amt_lp_out, tkn_out, USER)
+
+print(f"{amt_lp_out} LP tokens as removed for {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`500000 LP tokens as removed for 499898.496234 USDT`}</div>
+
+```python
+lp.summary()
+
+## Check for leaks
+usdt_check = lp.get_reserve(usdt)-res['tkn_out_amt']
+lp_amt_check = lp.total_supply - amt_lp_out
+
+usdt_test = 'PASS' if {usdt_before == usdt_check} else 'FAIL'
+lp_amt_test = 'PASS' if {lp_amt_before == lp_amt_check} else 'FAIL'
+print(f'Liquidity Leak (USDT): {usdt_test}')
+print(f'Liquidity Leak (LP AMT): {lp_amt_test}')
+```
+
+<div class="nb-output">{`Stableswap Exchange: DAI-USDC-USDT (LP)
+Reserves: DAI = 79316306.72151607, USDC = 80865058.718728, USDT = 55163355.413957
+Liquidity: 215343027.8056816 
+
+Liquidity Leak (USDT): PASS
+Liquidity Leak (LP AMT): PASS`}</div>
+
+#### Check Exchange / Math Pool / Token Balances
+
+```python
+math_pool = lp.get_math_pool()
+tkn_decimal_amts = sgrp.get_decimal_amts()
+```
+
+```python
+lp_test = 'PASS' if {lp.total_supply == round(math_pool.tokens/10**18,6)} else 'FAIL'
+print(f'Math Pool LP tkn balance == LP tkn balance: {lp_test}')
+```
+
+<div class="nb-output">{`Math Pool LP tkn balance == LP tkn balance: PASS`}</div>
+
+```python
+for k, tkn_nm in enumerate(lp.tkn_reserves):
+    tkn = sgrp.get_token(tkn_nm)
+    tkn_balance = tkn.token_total
+    tkn_math_pool_balance = float(Decimal(str(math_pool.balances[k]))/Decimal(str(10**tkn.token_decimal))) 
+    assert round(tkn_balance,5) == round(tkn_math_pool_balance,5), f'ERROR: {tkn_nm} TOKEN VALUE DOES NOT MATCH WITH MATH POOL'
+    print(f'Math pool [{tkn_nm}] balance == [{tkn_nm}] balance: PASS ')
+```
+
+<div class="nb-output">{`Math pool [DAI] balance == [DAI] balance: PASS 
+Math pool [USDC] balance == [USDC] balance: PASS 
+Math pool [USDT] balance == [USDT] balance: PASS`}</div>
+
+```python
+for k, tkn_nm in enumerate(lp.tkn_reserves):
+    tkn = sgrp.get_token(tkn_nm)
+    tkn_balance = lp.tkn_reserves[tkn_nm]
+    tkn_math_pool_balance = float(Decimal(str(math_pool.balances[k]))/Decimal(str(10**tkn.token_decimal))) 
+    assert round(tkn_balance,5) == round(tkn_math_pool_balance,5), f'ERROR: {tkn_nm} TOKEN VALUE DOES NOT MATCH WITH MATH POOL'
+    print(f'Math pool [{tkn_nm}] balance == Reserve [{tkn_nm}] balance: PASS [{tkn_nm}]')
+```
+
+<div class="nb-output">{`Math pool [DAI] balance == Reserve [DAI] balance: PASS [DAI]
+Math pool [USDC] balance == Reserve [USDC] balance: PASS [USDC]
+Math pool [USDT] balance == Reserve [USDT] balance: PASS [USDT]`}</div>
+
+```python
+for k, tkn_nm in enumerate(tkn_decimal_amts):
+    tkn = sgrp.get_token(tkn_nm)
+    tkn_balance = float(Decimal(str(tkn_decimal_amts[tkn_nm]))/Decimal(str(10**tkn.token_decimal)))  
+    tkn_math_pool_balance = float(Decimal(str(math_pool.balances[k]))/Decimal(str(10**tkn.token_decimal))) 
+    assert round(tkn_balance,5) == round(tkn_math_pool_balance,5), f'ERROR: {tkn_nm} TOKEN VALUE DOES NOT MATCH WITH MATH POOL'
+    print(f'Math pool [{tkn_nm}] balance == Group [{tkn_nm}] balance: PASS [{tkn_nm}] ')
+```
+
+<div class="nb-output">{`Math pool [DAI] balance == Group [DAI] balance: PASS [DAI] 
+Math pool [USDC] balance == Group [USDC] balance: PASS [USDC] 
+Math pool [USDT] balance == Group [USDT] balance: PASS [USDT]`}</div>

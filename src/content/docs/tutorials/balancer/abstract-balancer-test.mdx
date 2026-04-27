@@ -1,6 +1,187 @@
 ---
-title: "Abstract Balancer Test"
-description: "Coming soon."
+title: "Abstract Interface"
+description: "To download notebook to this tutorial, see here"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+* **📘 Join**: joins X and Y amounts to pool 
+* **📘 Swap**: swaps X for Y (and vice verse) via out-given-in or in-given-out
+* **📘 AddLiquidity**: adds liquidity using token or share amounts
+* **📘 RemoveLiquidity**: removes liquidity using token or share amounts
+
+To download notebook to this tutorial, see [here](https://github.com/defipy-devs/balancerpy/blob/main/notebooks/tests/test_abstract.ipynb)
+
+```python
+from defipy import *
+```
+
+```python
+user_nm = 'user_test'
+
+amt_dai = 10000000
+denorm_wt_dai = 10
+
+amt_eth = 67738.6361731024
+denorm_wt_eth = 40
+
+init_pool_shares = 100
+
+dai = ERC20("DAI", "0x111")
+dai.deposit(None, amt_dai)
+
+weth = ERC20("WETH", "0x09")
+weth.deposit(None, amt_eth)
+
+bgrp = BalancerVault()
+bgrp.add_token(dai, denorm_wt_dai)
+bgrp.add_token(weth, denorm_wt_eth)
+```
+
+### 📘 Join
+
+* **Class**: 📘 ``defipy.process.Join`` 
+    * **Purpose**: Simplifies initial liquidity addition to Balancer pools.
+    * **Methods**:
+        * ``apply(pool, user: str, amount_shares: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance (e.g., created via Primitive Interface).
+                * ``user``: User address.
+                * ``amount_shares``: Amount of initial pool shares.
+        * **Output**: Liquidity added to the pool.
+
+```python
+bfactory = BalancerFactory("WETH pool factory", "0x2")
+exchg_data = BalancerExchangeData(vault = bgrp, symbol="LP", address="0x011")
+lp = bfactory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, init_pool_shares)
+lp.summary()
+```
+
+<div class="nb-output">{`Balancer Exchange: DAI-WETH (LP)
+Reserves: DAI = 10000000, WETH = 67738.6361731024
+Weights: DAI = 0.2, WETH = 0.8
+Pool Shares: 100`}</div>
+
+### 📘 Swap (out-given-in)
+
+* **Class**: 📘 ``defipy.process.Swap`` 
+    * **Purpose**: Facilitates token swaps on Balancer pools.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, token_out: ERC20, user: str, amount_tkn_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform the swap on.
+                * ``token_in``: ERC20 token to swap in.
+                * ``token_out``: ERC20 token to swap out.
+                * ``user``: User address (string) executing the swap.
+                * ``amount_tkn_in``: Amount of `token_in` to swap.
+        * **Output**: Executes the swap from `token_in` to `token_out` for the user
+
+```python
+amt_tkn_in = 10000
+tkn_in = dai
+tkn_out = weth
+
+res = Swap(Proc.SWAPOUT).apply(lp, tkn_in, tkn_out, user_nm, amt_tkn_in)
+lp.summary()
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was swapped into {res['tkn_out_amt']} {tkn_out.token_name}")
+```
+
+<div class="nb-output">{`Balancer Exchange: DAI-WETH (LP)
+Reserves: DAI = 10010000, WETH = 67721.75437414162
+Weights: DAI = 0.2, WETH = 0.8
+Pool Shares: 100 
+
+10000 DAI was swapped into 16.881798960778035 WETH`}</div>
+
+### 📘 Swap (in-given-out)
+
+* **Class**: 📘 ``defipy.process.Swap`` 
+    * **Purpose**: Facilitates token swaps on Balancer pools.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, token_out: ERC20, user: str, amount_tkn_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform the swap on.
+                * ``token_in``: ERC20 token to swap in.
+                * ``token_out``: ERC20 token to swap out.
+                * ``user``: User address (string) executing the swap.
+                * ``amount_tkn_out``: Amount of `token_out` to swap.
+        * **Output**: Executes the swap from `token_out` to `token_in` for the user
+
+```python
+amt_tkn_out = 20
+tkn_out = weth
+tkn_in = dai
+
+res = Swap(Proc.SWAPIN).apply(lp, tkn_in, tkn_out, user_nm, amt_tkn_out)
+lp.summary()
+
+print(f"{amt_tkn_out} {tkn_out.token_name} was swapped into {res['tkn_in_amt']} {tkn_in.token_name}")
+```
+
+<div class="nb-output">{`Balancer Exchange: DAI-WETH (LP)
+Reserves: DAI = 9998136.750149786, WETH = 67741.75437414162
+Weights: DAI = 0.2, WETH = 0.8
+Pool Shares: 100 
+
+20 WETH was swapped into 11863.249850213939 DAI`}</div>
+
+### 📘 AddLiquidity (based on token amounts)
+
+* **Class**: 📘 ``defipy.process.AddLiquidity`` 
+    * **Purpose**: Adds liquidity to existing Balancer pools, handling token amounts and liquidity tokens minting.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform the swap on.
+                * ``token_in``: ERC20 token to swap from.
+                * ``user``: User address (string) providing liquidity.
+                * ``amount_in``: Amount of `token_in` to swap.
+        * **Output**: Adds the specified token amounts to the pool and mints liquidity tokens to the user.
+
+```python
+tkn_in = weth
+amt_tkn_in = 25
+
+res = AddLiquidity(Proc.ADDTKN).apply(lp, tkn_in, user_nm, amt_tkn_in)
+lp.summary()
+
+print(f"{amt_tkn_in} {tkn_in.token_name} was added resulting in anadditional {res['shares_in_amt']} LP shares")
+```
+
+<div class="nb-output">{`Balancer Exchange: DAI-WETH (LP)
+Reserves: DAI = 9998136.750149786, WETH = 67766.75437414162
+Weights: DAI = 0.2, WETH = 0.8
+Pool Shares: 100.0295080381873 
+
+25 WETH was added resulting in anadditional 0.029508038187306896 LP shares`}</div>
+
+### 📘 AddLiquidity (based on LP share amounts)
+
+* **Class**: 📘 ``defipy.process.AddLiquidity`` 
+    * **Purpose**: Adds liquidity to existing Balancer pools, handling token amounts and liquidity tokens minting.
+    * **Methods**:
+        * ``apply(pool, token_in: ERC20, user: str, amount_in: float)``
+            * **Parameters**:
+                * ``pool``: Pool instance to perform the swap on.
+                * ``token_in``: ERC20 token to swap from.
+                * ``user``: User address (string) providing liquidity.
+                * ``amt_shares_in``: Amount of shares to add.
+        * **Output**: Adds the specified lp amounts to the pool and mints liquidity tokens to the user.
+
+```python
+tkn_in = weth
+amt_shares_in = 10
+
+res = AddLiquidity(Proc.ADDSHARES).apply(lp, tkn_in, user_nm, amt_shares_in)
+lp.summary()
+
+print(f"{amt_shares_in} LP shares were added resulting in an additional {res['tkn_in_amt']} {tkn_in.token_name}")
+```
+
+<div class="nb-output">{`Balancer Exchange: DAI-WETH (LP)
+Reserves: DAI = 9998136.750149786, WETH = 76342.67577167299
+Weights: DAI = 0.2, WETH = 0.8
+Pool Shares: 110.0295080381873 
+
+10 LP shares were added resulting in an additional 8575.921397531378 WETH`}</div>
