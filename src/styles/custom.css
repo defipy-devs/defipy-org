@@ -88,6 +88,26 @@ header.header starlight-menu-button button {
 	width: auto;
 }
 
+/* ---- Page title sizing ---------------------------------------------- */
+/*
+ * Shrink the page-level H1 (rendered from frontmatter `title`) so that
+ * long titles like "DeFiPy: Python SDK for Agentic DeFi" fit on one line
+ * at typical desktop widths. Starlight's default is roughly 2.5rem; this
+ * brings it down to ~1.875rem (30px), with a further reduction on narrow
+ * viewports to avoid overflow on tablets / large phones.
+ */
+.sl-markdown-content h1:first-of-type,
+h1.page-title {
+	font-size: 1.875rem;
+	line-height: 1.2;
+}
+@media (max-width: 50rem) {
+	.sl-markdown-content h1:first-of-type,
+	h1.page-title {
+		font-size: 1.5rem;
+	}
+}
+
 /* ---- Notebook output blocks ----------------------------------------- */
 
 .nb-output {
