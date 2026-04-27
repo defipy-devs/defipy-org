@@ -121,12 +121,16 @@ likely_frontrun:     True`}</div>
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Execution analytics — slippage, price impact, MEV exposure — are V2/V3 only in v2.0. The math is available in `BalancerExchange.get_amount_out` and `StableswapExchange.get_amount_out`; the gap is primitive packaging, not derivation.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | Both primitives, full closed-form |
-| Uniswap V3 | ✅ | Both primitives; `max_size_at_1pct` is `None` (tick-crossing); `price_impact_pct` approximate for multi-tick trades |
-| Balancer | ❌ | LPQuote dispatch is Uniswap-only in v1 |
-| Stableswap | ❌ | LPQuote dispatch is Uniswap-only in v1 |
+| Uniswap V2 | Full | `CalculateSlippage`, `DetectMEV`. |
+| Uniswap V3 | Full | Both primitives. `max_size_at_1pct` is V2-only on `CalculateSlippage` (V3 tick-walking infrastructure not yet implemented; tracked alongside `AssessLiquidityDepth`). |
+| Balancer | Deferred (v2.1) | Sibling primitives (`CalculateBalancerSlippage`) or protocol-dispatching `CalculateSlippage` planned; Bucket A. Math is in `BalancerExchange.get_amount_out` — gap is primitive packaging. |
+| Stableswap | Deferred (v2.1) | Same as Balancer; math in `StableswapExchange.get_amount_out` (with the upstream `get_y` iteration-cap fix on the cleanup backlog as a related item). |
+
+Closing this gap also unblocks full [`CompareProtocols.slippage_at_amount`](/agentic-primitives/comparison/) plumbing.
 
 ## MCP tool exposure
 
