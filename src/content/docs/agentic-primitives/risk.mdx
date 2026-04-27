@@ -111,12 +111,16 @@ current_peg_deviation:     0.0
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Risk is the most protocol-divergent category in v2.0 — what "risk" *means* differs structurally per AMM family. Rather than parallel siblings, the category fans out into protocol-specific primitives that name the right question for each AMM.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ❌ | No risk primitive in this category — V2 is range-less and pegs are not relevant |
-| Uniswap V3 | ✅ | `CheckTickRangeStatus` only |
-| Balancer | ❌ | No risk primitive in v1 |
-| Stableswap | ✅ | `AssessDepegRisk` only |
+| Uniswap V2 | N/A | V2's symmetric reserves don't have V3's range-status risk or Stableswap's depeg risk; V2-specific risks (MEV, slippage) live in [Execution](/agentic-primitives/execution/). |
+| Uniswap V3 | Full | `CheckTickRangeStatus` answers *"is my range still active?"* — the dominant V3-specific position risk. |
+| Balancer | Deferred (v2.1) | Weight-imbalance and out-of-band swap-fee risks are tracked but not yet primitive-formalized. |
+| Stableswap | Full | `AssessDepegRisk` quantifies exposure to a stablecoin depeg using the closed-form ε ↔ δ derivation over the invariant; 2-asset only in v1 (N&gt;2 is non-trivial new math). |
+
+The category fans out by design — V3's risk is range-status, Stableswap's is depeg, Balancer's is weight exposure. Forcing them into a single primitive would conflate three structurally different questions.
 
 ## MCP tool exposure
 

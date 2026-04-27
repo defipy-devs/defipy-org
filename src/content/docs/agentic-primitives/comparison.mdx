@@ -87,6 +87,17 @@ CompareProtocols(price_shock=0.10, v3_range_pct=0.10).apply(
 
 `token_in` defaults to `lp_a`'s token0 — both pools must contain it. V3 `il_at_shock` is `None` when `price_shock > v3_range_pct` (out-of-range regime). Stableswap `il_at_shock` is `None` on `DepegUnreachableError`. Balancer/Stableswap `slippage_at_amount` is `None` (CalculateSlippage is Uniswap-only). Advantage labels: `"pool_a"`, `"pool_b"`, `"tied"`, or `None` (when either side is `None`).
 
+**Protocol-specific output behavior.** The `apply()` signature is uniform — two `lp` objects, an `amount`, an optional `token_in`. What diverges is *which output fields are populated* per protocol:
+
+| Protocol | `il_at_shock` | `slippage_at_amount` | Notes |
+|---|---|---|---|
+| Uniswap V2 | Always populated | Always populated | |
+| Uniswap V3 | Conditional — `None` when `price_shock > v3_range_pct` | Always populated | Out-of-range regime: position has exited the active tick range, so IL framing doesn't apply. |
+| Balancer | Always populated | Always `None` (v2.0) | `CalculateSlippage` is V2/V3-only; Balancer slippage closes once Bucket A lands. |
+| Stableswap | Conditional — `None` on `DepegUnreachableError` | Always `None` (v2.0) | High `A` + large shock can produce unreachable target state; slippage same as Balancer. |
+
+The `notes` field on the result already surfaces the slippage gap when it occurs — this table makes the contract visible *before* the example.
+
 ```python
 from defipy import CompareProtocols
 
@@ -125,12 +136,16 @@ notes: ['pool_b: Balancer slippage not computed in v1 (CalculateSlippage is Unis
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+`CompareProtocols` is full cross-protocol; `CompareFeeTiers` is V3-only by definition (V2 has a single 30-bps fee, Bal/Ssw don't have fee tiers in this sense). Where Balancer/Stableswap show up as Partial below, the gap is `slippage_at_amount` returning `None` because [`CalculateSlippage`](/agentic-primitives/execution/) is V2/V3-only in v2.0 — IL is still computed.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | `CompareProtocols` (full) |
-| Uniswap V3 | ✅ | `CompareFeeTiers` (single-protocol); `CompareProtocols` (full, with `v3_range_pct` constraint) |
-| Balancer | ⚠️ | `CompareProtocols` (IL only — slippage is `None`) |
-| Stableswap | ⚠️ | `CompareProtocols` (IL only; `None` on unreachable depeg) |
+| Uniswap V2 | Full (`CompareProtocols`); N/A (`CompareFeeTiers` — V2 has a single 30-bps fee) | |
+| Uniswap V3 | Full (both primitives) | `CompareFeeTiers` is V3-only by definition. |
+| Balancer | Partial | Accepted as candidate in `CompareProtocols`; `slippage_at_amount` returns `None` because `CalculateSlippage` is Uniswap-only. IL still computed. |
+| Stableswap | Partial | Same shape as Balancer — accepted in `CompareProtocols`, slippage degrades to `None`. |
+
+Slippage gap closes when `CalculateSlippage` extensions land for Balancer/Stableswap (Bucket A / v2.1).
 
 ## MCP tool exposure
 
