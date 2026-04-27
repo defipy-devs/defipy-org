@@ -1,0 +1,102 @@
+---
+title: "AnalyzeBalancerPosition"
+description: "2-asset Balancer LP decomposition into IL and net PnL using the weighted-pool closed form. Sibling primitive; opp-token numeraire; v1 has no per-LP fee attribution."
+---
+
+`AnalyzeBalancerPosition` is the **read-only**, stateless primitive for 2-asset Balancer weighted pools. Sibling to [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) (V2/V3) and [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — same answer shape, adapted to Balancer's weighted IL where the *weight* (not just the price ratio) drives IL.
+
+The Balancer entry point that lets [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) route mixed-protocol portfolios.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Use [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) |
+| Uniswap V3 | ❌ Use [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) |
+| Balancer | `AnalyzeBalancerPosition().apply(lp, lp_init_amt, entry_base_amt, entry_opp_amt, holding_period_days=None)` |
+| Stableswap | ❌ Use [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `BalancerExchange` | 2-asset Balancer pool. N>2 raises `ValueError` (propagated from `BalancerImpLoss`). |
+| `lp_init_amt` | `float` | Pool shares held by the position. |
+| `entry_base_amt` | `float` | Amount of base token deposited at entry (first token in pool insertion order). |
+| `entry_opp_amt` | `float` | Amount of opp token deposited at entry. |
+| `holding_period_days` | `float` *(optional)* | Holding period in days; enables `real_apr` annualization. |
+
+## Mathematical contract
+
+Balancer weighted-pool IL formula (with base-token weight `w`):
+
+$$
+\mathrm{IL}(\alpha) = \alpha^{w} + (1 - w) \cdot \alpha^{w - 1} - 1, \qquad \alpha = \frac{p_{current}}{p_{entry}}
+$$
+
+where `p` is opp-per-base. At `w = 0.5` this collapses to the V2 formula; at other weights the curve is asymmetric. Composed via [`BalancerImpLoss`](https://github.com/defipy-devs/balancerpy) — the sibling-repo helper, lifted there during the 1.2.0 work symmetric with `UniswapImpLoss` and `StableswapImpLoss`.
+
+**Numeraire:** opp-token (the second token in the pool's insertion order). Differs from `AnalyzePosition`'s token0 numeraire — callers aggregating across protocols in a common token need to rebase manually. [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) handles this by requiring a shared first-token symbol across positions.
+
+**Alpha computed fee-free.** The primitive goes direct to reserves rather than through `lp.get_price()` which bakes in a fee scale factor — keeps the IL pure to price divergence and consistent with the IL formula's derivation.
+
+**Scope: 2-asset only.** Inherited from `BalancerImpLoss`'s own scope. N-asset extension requires first extending `BalancerImpLoss`.
+
+**No fee attribution in v1.** Balancer's `collected_fees` is vault-level with no per-LP attribution inside the pool object — surfacing a derived fee number would fabricate precision the state doesn't carry. `fee_income = 0.0` always; `il_with_fees == il_percentage`.
+
+**Diagnosis enum** has only two values in v1: `"net_positive"` and `"il_dominant"`. When fee attribution lands, `"fee_compensated"` will be added to match `AnalyzePosition`'s shape.
+
+## Example
+
+```python
+from defipy import AnalyzeBalancerPosition
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_bal = builder.build(provider.snapshot("eth_dai_balancer_50_50"))
+
+# Same scenario as the V2 example: ETH entered at 80 DAI, now 100 DAI.
+result = AnalyzeBalancerPosition().apply(
+    lp_bal,
+    lp_init_amt = 100.0,
+    entry_base_amt = 1000.0,
+    entry_opp_amt = 80000.0,
+    holding_period_days = 30.0,
+)
+
+print(f"base / opp:     {result.base_tkn_name} / {result.opp_tkn_name}")
+print(f"base_weight:    {result.base_weight}")
+print(f"current_value:  {result.current_value:.4f}")
+print(f"hold_value:     {result.hold_value:.4f}")
+print(f"il_percentage:  {result.il_percentage:.6f}")
+print(f"net_pnl:        {result.net_pnl:.4f}")
+print(f"alpha:          {result.alpha:.6f}")
+print(f"diagnosis:      {result.diagnosis}")
+```
+
+<div class="nb-output">{`base / opp:     ETH / DAI
+base_weight:    0.5
+current_value:  200000.0000
+hold_value:     180000.0000
+il_percentage:  -0.006192
+net_pnl:        20000.0000
+alpha:          1.250000
+diagnosis:      net_positive`}</div>
+
+At `w = 0.5` the IL value matches the V2 reference (`-0.006192`). For `w ≠ 0.5` the same `α = 1.25` would produce a different IL value, asymmetric in direction.
+
+## How this composes
+
+- Composes [`BalancerImpLoss`](https://github.com/defipy-devs/balancerpy) for the weighted-pool IL formula.
+- Composed *into* by [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) as the Balancer entry point.
+
+## See also
+
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — V2/V3 sibling
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — Stableswap sibling
+- [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) — projection counterpart
+- [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — multi-position aggregation
+- [Balancer math](/math/balancer-math/) — weighted-pool invariant
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset — surfaced as the Balancer entry point for "how is my position doing?".

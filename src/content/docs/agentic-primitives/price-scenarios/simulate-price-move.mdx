@@ -1,0 +1,97 @@
+---
+title: "SimulatePriceMove"
+description: "V2/V3 paper projection: how would this LP position be valued at a hypothetical price change? Sibling primitive; closed-form IL at the projected α; numeraire is token0."
+---
+
+`SimulatePriceMove` is the **read-only**, stateless primitive that projects a Uniswap V2 or V3 LP position's value at a hypothetical price change. **Paper projection** — no settlement-swap impact, no fee modeling. Use it to answer *"if ETH drops 30% from here, what's my position worth?"*
+
+Sibling primitives handle the other AMM families:
+- [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) for Balancer 2-asset weighted pools
+- [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) for Stableswap pools
+
+:::note[When to use `SimulatePriceMove` vs `AnalyzePosition`]
+[`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) is *current state* — no projection. `SimulatePriceMove` is *future state at a hypothetical price* — same IL formula, but evaluated at a projected `α` rather than the current one. Pair them when the workflow is "where am I now, where would I be if X happened?"
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `SimulatePriceMove().apply(lp, price_change_pct, position_size_lp)` |
+| Uniswap V3 | `SimulatePriceMove().apply(lp, price_change_pct, position_size_lp, lwr_tick, upr_tick)` |
+| Balancer | ❌ Use [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) |
+| Stableswap | ❌ Use [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange. |
+| `price_change_pct` | `float` | Fractional price change (`-0.30` = 30% drop). Bounded by `> -1.0`. |
+| `position_size_lp` | `float` | Position size in LP-token units. The result is **scale-invariant** in this size — use any positive value. |
+| `lwr_tick`, `upr_tick` | `int` *(V3 only)* | Position's tick range. |
+
+## Mathematical contract
+
+The projection: starting from the pool's current α (the price ratio `current_price / entry_price`), project to `α' = α · (1 + price_change_pct)`. The IL formula evaluates at α':
+
+$$
+\mathrm{IL}(\alpha') = \frac{2\sqrt{\alpha'}}{1 + \alpha'} - 1
+$$
+
+Composed via [`UniswapImpLoss`](https://github.com/defipy-devs/uniswappy)'s `calc_iloss` — the same helper that powers [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/), evaluated at a counterfactual α.
+
+**Numeraire:** token0 (matches `AnalyzePosition`).
+
+**V3 range factor.** For V3, `calc_iloss(α, r)` accepts the range `r = P_upper / P_lower` and scales accordingly. Outside the range the position behaves like a 100% allocation to one side; tight ranges amplify IL inside the range.
+
+**`fee_projection = None` in v1.** The primitive does not model fee accrual at the projected price — it's a pure-IL projection. Callers wanting "IL minus projected fees" combine this primitive's output with their own fee-rate assumption (or use [`FindBreakEvenTime`](/agentic-primitives/break-even/find-break-even-time/) for the reverse question).
+
+**Scale-invariance in `position_size_lp`.** All result fields scale linearly with `position_size_lp`, so the IL *fraction* is identical regardless of the input — pass any positive value.
+
+## Example
+
+```python
+from defipy import SimulatePriceMove
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+# What happens to a 10,000 LP-share position if ETH drops 30%?
+result = SimulatePriceMove().apply(
+    lp_v2,
+    price_change_pct = -0.30,
+    position_size_lp = 10000.0,
+)
+
+print(f"new_price_ratio:    {result.new_price_ratio:.6f}")
+print(f"new_value:          {result.new_value:.4f}")
+print(f"il_at_new_price:    {result.il_at_new_price:.6f}")
+print(f"value_change_pct:   {result.value_change_pct:.6f}")
+print(f"fee_projection:     {result.fee_projection}")
+```
+
+<div class="nb-output">{`new_price_ratio:    0.700000
+new_value:          2390.4572
+il_at_new_price:    -0.015694
+value_change_pct:   0.195229
+fee_projection:     None`}</div>
+
+A 30% ETH drop produces ~1.57% IL on the V2 position — the curve is symmetric in `α`, so a 30% rise would give the same IL fraction.
+
+## How this composes
+
+- Composes [`UniswapImpLoss`](https://github.com/defipy-devs/uniswappy)'s `calc_iloss` evaluated at the projected α.
+- Composed *into* by [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) for the IL-at-shock leg of cross-protocol comparison.
+
+## See also
+
+- [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) — Balancer sibling
+- [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) — Stableswap sibling
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — current-state counterpart
+- [`FindBreakEvenPrice`](/agentic-primitives/break-even/find-break-even-price/) — inverse question (find α where fees = IL)
+- [Uniswap V2 math](/math/univ2-math/) — closed-form IL derivation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset — high-traffic agent question.

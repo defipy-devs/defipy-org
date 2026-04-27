@@ -1,0 +1,88 @@
+---
+title: "SimulateBalancerPriceMove"
+description: "Balancer 2-asset paper projection at a hypothetical price change. Sibling primitive; weight-aware IL formula; opp-token numeraire."
+---
+
+`SimulateBalancerPriceMove` is the **read-only**, stateless primitive that projects a 2-asset Balancer LP position's value at a hypothetical price change. Sibling to [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) (V2/V3) and [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/).
+
+The IL formula uses the base/opp weights — *not* just the price ratio.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Use [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) |
+| Uniswap V3 | ❌ Use [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) |
+| Balancer | `SimulateBalancerPriceMove().apply(lp, price_change_pct, lp_init_amt)` |
+| Stableswap | ❌ Use [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `BalancerExchange` | 2-asset Balancer pool. N>2 raises `ValueError` (propagated from `BalancerImpLoss`). |
+| `price_change_pct` | `float` | Fractional price change applied to opp-per-base (e.g. `-0.30` = 30% drop). |
+| `lp_init_amt` | `float` | Pool shares held by the position. |
+
+## Mathematical contract
+
+Project to `α' = α · (1 + price_change_pct)` and evaluate the weighted-pool IL at α':
+
+$$
+\mathrm{IL}(\alpha') = \alpha'^{w} + (1 - w) \cdot \alpha'^{w - 1} - 1
+$$
+
+where `w` is the base-token weight. Composed via [`BalancerImpLoss`](https://github.com/defipy-devs/balancerpy) — same helper that powers [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/), evaluated at a counterfactual α.
+
+**Numeraire:** opp-token (matches `AnalyzeBalancerPosition`). Differs from the V2/V3 token0 numeraire — callers aggregating need to rebase.
+
+**Scope: 2-asset only.** Inherited from `BalancerImpLoss`. N-asset extension requires extending `BalancerImpLoss` first.
+
+**At `w = 0.5`** the IL value matches V2 at the same `α'`. At asymmetric weights the curve becomes directional — a 30% drop and a 30% rise produce different IL fractions.
+
+## Example
+
+```python
+from defipy import SimulateBalancerPriceMove
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_bal = builder.build(provider.snapshot("eth_dai_balancer_50_50"))
+
+result = SimulateBalancerPriceMove().apply(
+    lp_bal,
+    price_change_pct = -0.30,
+    lp_init_amt = 100.0,
+)
+
+print(f"base / opp:         {result.base_tkn_name} / {result.opp_tkn_name}")
+print(f"base_weight:        {result.base_weight}")
+print(f"new_price_ratio:    {result.new_price_ratio:.6f}")
+print(f"new_value:          {result.new_value:.4f}")
+print(f"il_at_new_price:    {result.il_at_new_price:.6f}")
+print(f"value_change_pct:   {result.value_change_pct:.6f}")
+```
+
+<div class="nb-output">{`base / opp:         ETH / DAI
+base_weight:        0.5
+new_price_ratio:    0.700000
+new_value:          167332.0053
+il_at_new_price:    -0.015694
+value_change_pct:   -0.163340`}</div>
+
+At `w = 0.5` the IL fraction matches V2 (`-0.015694`). The `value_change_pct` differs because the numeraire is opp-token (DAI) not token0 (ETH) — a 30% ETH drop reduces the DAI-denominated portfolio value beyond the IL fraction alone.
+
+## How this composes
+
+- Composes [`BalancerImpLoss`](https://github.com/defipy-devs/balancerpy) evaluated at the projected α.
+- Independent of [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — projections aren't aggregated into portfolio totals; use this primitive standalone for individual position what-ifs.
+
+## See also
+
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — V2/V3 sibling
+- [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) — Stableswap sibling
+- [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) — current-state counterpart
+- [Balancer math](/math/balancer-math/) — weighted-pool invariant
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset.

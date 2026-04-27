@@ -1,0 +1,111 @@
+---
+title: "AnalyzeStableswapPosition"
+description: "2-asset Stableswap LP decomposition with at-peg short-circuit and unreachable-alpha handling. Sibling primitive; peg numeraire; v1 has no per-LP fee attribution."
+---
+
+`AnalyzeStableswapPosition` is the **read-only**, stateless primitive for 2-asset Stableswap pools. The Stableswap entry point with **unreachable-alpha handling** that propagates to portfolio totals — sibling to [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) (V2/V3) and [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/).
+
+The stableswap flat-curve regime around peg means small price deviations can produce surprisingly large IL at high `A`.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Use [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) |
+| Uniswap V3 | ❌ Use [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) |
+| Balancer | ❌ Use [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) |
+| Stableswap | `AnalyzeStableswapPosition().apply(lp, lp_init_amt, entry_amounts, holding_period_days=None)` |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `StableswapExchange` | 2-asset stableswap pool. N>2 raises `ValueError` (propagated from `StableswapImpLoss`). |
+| `lp_init_amt` | `float` | Pool shares held by the position. |
+| `entry_amounts` | `list[float]` | Per-token entry amounts in pool insertion order, e.g. `[x0, x1]`. **Different shape from V2/V3/Balancer's paired entry_x/y** — covers single-sided deposits, not just balanced ones. |
+| `holding_period_days` | `float` *(optional)* | Holding period in days; enables `real_apr` annualization. |
+
+## Mathematical contract
+
+Composes [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy) for the closed-form IL math via the ε ↔ δ derivation over the stableswap invariant. Same primitive composition pattern as [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) — see that page for the full derivation walkthrough.
+
+**Numeraire:** peg (1:1 across tokens). All values are denominated at peg — stableswap's natural numeraire (no divergence ⇒ tokens equivalent in value), matching `StableswapImpLoss.hold_value()`. Callers wanting a non-peg numeraire rebase manually.
+
+**At-peg short-circuit.** When the pool's implied `|1 − dydx| < 1e-12`, the primitive treats it as perfectly balanced and skips the fixed-point IL computation:
+
+- `il_percentage = 0.0`
+- `diagnosis = "at_peg"`
+
+Both for performance and to avoid the `ε = 0` degenerate case bouncing through the solver.
+
+**Unreachable-alpha handling.** At high `A`, small `|1 − α|` shocks may be unreachable (`|ε| ≥ 0.95` or wherever the solver bounds it). When the current pool state implies such an alpha, the primitive catches `DepegUnreachableError` and returns:
+
+- `il_percentage = None`
+- `net_pnl = None`
+- `diagnosis = "unreachable_alpha"`
+- `current_value = hold_value` (conservatively — without IL we can't back out a per-token composition)
+
+This matches the `None`-sentinel convention used by [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) and [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/). In practice it's rare for a pool's *own* state to drift past reachability (self-consistency of the invariant keeps it inside), but honest handling avoids silent surprises.
+
+**`entry_amounts` rationale.** Takes a list `[x0, x1]` instead of paired `entry_x_amt`/`entry_y_amt` because stableswap commonly has single-sided deposits — `[x, 0]` or `[0, y]` — that aren't naturally paired. Setting one entry to zero captures a single-sided deposit cleanly.
+
+**No fee attribution in v1.** Stableswap's `self.tkn_fees` is pool-global with no per-LP attribution; same scope stance as `AnalyzeBalancerPosition`. `fee_income = 0.0` always.
+
+## Example
+
+```python
+from defipy import AnalyzeStableswapPosition
+from defipy.twin import MockProvider, StateTwinBuilder
+from stableswappy.process.swap import Swap as StableswapSwap
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_sts = builder.build(provider.snapshot("usdc_dai_stableswap_A10"))
+sts_tokens = lp_sts.factory.token_from_exchange[lp_sts.name]
+
+# Push slightly off peg so the analysis isn't trivially zero.
+StableswapSwap().apply(lp_sts, sts_tokens["USDC"], sts_tokens["DAI"], "agent", 5000.0)
+
+result = AnalyzeStableswapPosition().apply(
+    lp_sts,
+    lp_init_amt = 100.0,
+    entry_amounts = [100000.0, 100000.0],
+    holding_period_days = 30.0,
+)
+
+print(f"token_names:    {result.token_names}")
+print(f"A:              {result.A}")
+print(f"alpha:          {result.alpha:.6f}")
+print(f"current_value:  {result.current_value:.6f}")
+print(f"hold_value:     {result.hold_value:.4f}")
+print(f"il_percentage:  {result.il_percentage:.8f}")
+print(f"net_pnl:        {result.net_pnl:.6f}")
+print(f"diagnosis:      {result.diagnosis}")
+```
+
+<div class="nb-output">{`token_names:    ['USDC', 'DAI']
+A:              10
+alpha:          0.990934
+current_value:  199966.455457
+hold_value:     200000.0000
+il_percentage:  -0.00016772
+net_pnl:        -33.544543
+diagnosis:      il_dominant`}</div>
+
+A 1% off-peg drift at `A = 10` produces ~0.017% IL on a $200k position — small in absolute terms, but flagged as `il_dominant` because there are no fees in this scenario to compensate.
+
+## How this composes
+
+- Composes [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy) for the closed-form IL via the ε ↔ δ derivation. Same composition pattern as [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/).
+- Composed *into* by [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — unreachable-alpha positions contribute `0.0` to portfolio totals and append a note to `shared_exposure_warnings`.
+
+## See also
+
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — V2/V3 sibling
+- [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) — Balancer sibling
+- [`SimulateStableswapPriceMove`](/agentic-primitives/price-scenarios/simulate-stableswap-price-move/) — projection counterpart
+- [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) — multi-level depeg-risk surface
+- [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — multi-position aggregation with unreachable-alpha handling
+- [Stableswap math](/math/stableswap-math/) — invariant + ε ↔ δ relation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset — surfaced as the Stableswap entry point for "how is my position doing?".

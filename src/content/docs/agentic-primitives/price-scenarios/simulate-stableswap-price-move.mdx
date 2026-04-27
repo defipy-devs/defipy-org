@@ -1,0 +1,103 @@
+---
+title: "SimulateStableswapPriceMove"
+description: "Stableswap 2-asset paper projection at a hypothetical depeg. Sibling primitive; current-α derived from dydx; unreachable-α returns Optional None on value fields."
+---
+
+`SimulateStableswapPriceMove` is the **read-only**, stateless primitive that projects a 2-asset stableswap LP position's value at a hypothetical depeg. Sibling to [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) (V2/V3) and [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/).
+
+High `A` makes small price deviations costly — use **small** moves (a 5% move is meaningful, a 30% move usually isn't reachable for typical `A`).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Use [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) |
+| Uniswap V3 | ❌ Use [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) |
+| Balancer | ❌ Use [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) |
+| Stableswap | `SimulateStableswapPriceMove().apply(lp, price_change_pct, lp_init_amt)` |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `StableswapExchange` | 2-asset stableswap pool. N>2 raises `ValueError` (propagated from `StableswapImpLoss`). |
+| `price_change_pct` | `float` | Fractional price change. Use small values (typically `\|x\| ≤ 0.10`); larger shocks are often unreachable for typical `A`. |
+| `lp_init_amt` | `float` | Pool shares held by the position. |
+
+## Mathematical contract
+
+Three steps:
+
+**1. Derive current α.** From the live pool's `dydx`:
+
+```python
+current_alpha = lp.math_pool.dydx(0, 1, use_fee=False)
+```
+
+This gives the marginal price of token0 in token1 units, fee-free, at the pool's current state.
+
+**2. Compound the shock.** `new_alpha = current_alpha · (1 + price_change_pct)`.
+
+**3. Evaluate IL via the helper.** Composed via [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy)'s `calc_iloss` — same closed-form ε ↔ δ derivation that powers [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) and [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/), evaluated at the projected α.
+
+**Numeraire:** peg (1:1 across tokens).
+
+**At-peg short-circuit.** If `current_alpha ≈ 1` (within tolerance), `il_at_new_price` returns the closed-form IL at `1 + price_change_pct` directly without going through the fixed-point.
+
+**Unreachable handling.** If `new_alpha` is unreachable for the pool's `A` (the fixed-point has no `|ε| < 1` solution), the primitive catches `DepegUnreachableError` and returns:
+
+- `new_value = None`
+- `il_at_new_price = None`
+- `value_change_pct = None`
+- `token_names`, `A`, `new_price_ratio` still populated
+
+This lets callers tell the difference between *"this depeg isn't reachable for this A"* and *"this primitive failed."*
+
+## Example
+
+```python
+from defipy import SimulateStableswapPriceMove
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_sts = builder.build(provider.snapshot("usdc_dai_stableswap_A10"))
+
+# Stableswap is sensitive — model a 5% depeg.
+result = SimulateStableswapPriceMove().apply(
+    lp_sts,
+    price_change_pct = -0.05,
+    lp_init_amt = 100.0,
+)
+
+print(f"token_names:        {result.token_names}")
+print(f"A:                  {result.A}")
+print(f"new_price_ratio:    {result.new_price_ratio:.6f}")
+print(f"new_value:          {result.new_value}")
+print(f"il_at_new_price:    {result.il_at_new_price}")
+print(f"value_change_pct:   {result.value_change_pct}")
+```
+
+<div class="nb-output">{`token_names:        ['USDC', 'DAI']
+A:                  10
+new_price_ratio:    0.950000
+new_value:          99.51570243887126
+il_at_new_price:    -0.004842975611287428
+value_change_pct:   -0.004842975611287414`}</div>
+
+A 5% depeg at `A = 10` produces ~0.48% IL — measurably more than V2 would at the same shock (V2 at `α = 0.95` gives ~0.033% IL). The amplification benefits stableswap *near peg* and hurts it *off peg* — which is exactly the design tradeoff [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) surfaces across multiple shocks.
+
+## How this composes
+
+- Composes [`StableswapImpLoss`](https://github.com/defipy-devs/stableswappy) evaluated at the projected α.
+- Independent of [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) — that primitive runs N depeg levels with V2 comparison; this one runs a single price shock with richer per-scenario fields.
+
+## See also
+
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — V2/V3 sibling
+- [`SimulateBalancerPriceMove`](/agentic-primitives/price-scenarios/simulate-balancer-price-move/) — Balancer sibling
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — current-state counterpart
+- [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) — multi-level depeg-risk surface
+- [Stableswap math](/math/stableswap-math/) — invariant + ε ↔ δ relation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset.

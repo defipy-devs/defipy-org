@@ -1,0 +1,108 @@
+---
+title: "AnalyzePosition"
+description: "V2/V3 LP position decomposition — IL, fee income, net PnL, real APR, and diagnosis. Sibling primitive (V2/V3 only); Balancer and Stableswap have their own analyzers."
+---
+
+`AnalyzePosition` is the **read-only**, stateless primitive that decomposes a Uniswap V2 or V3 LP position into impermanent loss, fee income, net PnL, and a categorical diagnosis. It composes [`UniswapImpLoss`](https://github.com/defipy-devs/uniswappy) for the closed-form IL math.
+
+Sibling primitives handle the other AMM families:
+- [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) for 2-asset weighted Balancer pools
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) for 2-asset Stableswap pools
+
+:::note[When to use `AnalyzePosition` vs `SimulatePriceMove`]
+`AnalyzePosition` answers *"how is this position doing **right now**?"* — current pool state, current spot price, current accrued fees. [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) answers *"what would this position be worth at a hypothetical price?"* — same IL formula, projected at a `price_change_pct`.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `AnalyzePosition().apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, holding_period_days=None)` |
+| Uniswap V3 | `AnalyzePosition().apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, lwr_tick, upr_tick, holding_period_days=None)` |
+| Balancer | ❌ Use [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) |
+| Stableswap | ❌ Use [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange at current pool state. |
+| `lp_init_amt` | `float` | LP tokens held by the position, in human units. |
+| `entry_x_amt` | `float` | Amount of `token0` originally deposited at entry, human units. |
+| `entry_y_amt` | `float` | Amount of `token1` originally deposited at entry, human units. |
+| `lwr_tick`, `upr_tick` | `int` *(V3 only)* | Position's tick range. Required for V3, omit for V2. |
+| `holding_period_days` | `float` *(optional)* | Holding period in days. When provided, `real_apr` is annualized from `net_pnl`; otherwise `real_apr = None`. |
+
+## Mathematical contract
+
+V2/V3 closed-form IL via `UniswapImpLoss.calc_iloss(α)` where
+
+$$
+\mathrm{IL}(\alpha) = \frac{2\sqrt{\alpha}}{1 + \alpha} - 1, \qquad \alpha = \frac{p_{current}}{p_{entry}}
+$$
+
+with `p` measured as token1-per-token0 (matches `lp.get_price(token0)`).
+
+**Numeraire:** token0 (e.g. ETH for an ETH/DAI pool). All values are token0-denominated.
+
+**V3 scaling.** For V3, the IL formula picks up a range factor `r = P_upper / P_lower`, and `calc_iloss` accepts `r` as a second argument. Outside the range the position behaves like a 100% allocation to one side; inside the range the closed form scales accordingly.
+
+**Paper-share entry vs settlement-share.** `UniswapImpLoss(lp, lp_init_amt)` exposes `x_tkn_init` / `y_tkn_init` — the **linear share** of current reserves entitled to `lp_init_amt`. This is the "paper value" — what the position is worth if it could be redeemed without moving the pool. Settlement value (running an internal `RebaseIndexToken` swap) is V2-only and crashes on V3 at 100% pool ownership with `ZeroDivisionError`; the primitive uses paper value to stay V2/V3-uniform.
+
+**Fee income isolation.** `fee_income = (il_with_fees − il_raw) · hold_value`. The gap between realized IL (from current vs hold values) and pure-price IL (from the closed form) is the fee contribution.
+
+**Diagnosis enum.** Three values:
+- `"net_positive"` — `net_pnl > 0`
+- `"fee_compensated"` — fees recovered >50% of the IL drag (`(1 − il_with_fees / il_raw) > 0.5`)
+- `"il_dominant"` — IL drag dominates; fees aren't keeping up
+
+## Example
+
+```python
+from defipy import AnalyzePosition
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+# Position entered at 80 DAI/ETH; current spot is 100 DAI/ETH (ETH +25%).
+result = AnalyzePosition().apply(
+    lp_v2,
+    lp_init_amt = 10000.0,
+    entry_x_amt = 1000.0,
+    entry_y_amt = 80000.0,
+    holding_period_days = 30.0,
+)
+
+print(f"current_value:  {result.current_value:.4f}")
+print(f"hold_value:     {result.hold_value:.4f}")
+print(f"il_percentage:  {result.il_percentage:.6f}")
+print(f"fee_income:     {result.fee_income:.4f}")
+print(f"net_pnl:        {result.net_pnl:.4f}")
+print(f"diagnosis:      {result.diagnosis}")
+```
+
+<div class="nb-output">{`current_value:  2000.0000
+hold_value:     1800.0000
+il_percentage:  -0.006192
+fee_income:     211.1456
+net_pnl:        200.0000
+diagnosis:      net_positive`}</div>
+
+## How this composes
+
+- Composes [`UniswapImpLoss`](https://github.com/defipy-devs/uniswappy) for both `x_tkn_init`/`y_tkn_init` (linear-share denominators) and `calc_iloss` (closed-form IL formula).
+- Composed *into* by [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — the V2/V3 entry point for portfolio-level analysis.
+- Composed *into* by [`FindBreakEvenTime`](/agentic-primitives/break-even/find-break-even-time/) for the current IL-drag and fee-rate inputs.
+
+## See also
+
+- [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) — Balancer sibling
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — Stableswap sibling
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — projection counterpart
+- [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — multi-position aggregation
+- [Uniswap V2 math](/math/univ2-math/) — closed-form IL derivation
+- [Uniswap V3 math](/math/univ3-math/) — V3 range-scale factor
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset — surfaced as the V2/V3 entry point for "how is my position doing?".
