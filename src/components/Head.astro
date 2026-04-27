@@ -1,0 +1,14 @@
+---
+// Override of Starlight's default Head component.
+// Renders the upstream <Head /> first (preserving favicons, OG tags, theme
+// meta, search, etc. that Starlight injects), then appends the Vercel Web
+// Analytics tag. Vercel's <Analytics /> component injects a single async
+// script that ships pageview events to Vercel's edge — server-side
+// counted, blocker-resistant, complementary to the GA4 tag in
+// astro.config.mjs.
+import Default from '@astrojs/starlight/components/Head.astro';
+import Analytics from '@vercel/analytics/astro';
+---
+
+<Default><slot /></Default>
+<Analytics />

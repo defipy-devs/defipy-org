@@ -30,6 +30,13 @@ export default defineConfig({
 				'./src/styles/custom.css',
 				'katex/dist/katex.min.css',
 			],
+			// Component overrides. The Head override appends Vercel Web
+			// Analytics (server-side pageviews, blocker-resistant) to
+			// Starlight's default <head>. GA4 stays in the head: array
+			// below — both analytics tools fire in parallel.
+			components: {
+				Head: './src/components/Head.astro',
+			},
 			head: [
 				{
 					tag: 'script',
