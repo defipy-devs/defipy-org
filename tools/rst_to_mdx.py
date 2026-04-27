@@ -49,6 +49,7 @@ REF_TO_SLUG = {
     "roadmap": "/roadmap/",
     "balancer_math": "/math/balancer-math/",
     "stableswap_math": "/math/stableswap-math/",
+    "agentic_primitives_by_category": "/agentic-primitives/",
     # Legacy / consolidated targets — these RST anchors exist in the source but
     # have no dedicated page in the new IA; route them to the closest fit.
     "usage": "/quick/",
@@ -99,6 +100,28 @@ def fix_admonitions(text: str) -> str:
         body = m.group(2).rstrip()
         return f":::{kind}\n{body}\n:::"
     return _ADMONITION_DIV.sub(repl, text)
+
+
+# Pandoc -t gfm emits GitHub-style alerts:
+#     > [!NOTE]
+#     > body line 1
+#     > body line 2
+# MDX rejects `[!` as JSX. Convert to Starlight `:::note ... :::`.
+_GFM_ALERT = re.compile(
+    r"^>\s*\[!(\w+)\]\s*\n((?:^>.*\n?)*)",
+    re.MULTILINE,
+)
+
+
+def fix_gfm_alerts(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        kind = _STARLIGHT_KIND.get(m.group(1).lower(), "note")
+        body = "\n".join(
+            line.lstrip("> ").rstrip()
+            for line in m.group(2).splitlines()
+        ).strip()
+        return f":::{kind}\n{body}\n:::"
+    return _GFM_ALERT.sub(repl, text)
 
 
 # Pre-pandoc: pandoc treats :ref:`label` as a generic role and emits inline
@@ -201,6 +224,7 @@ def convert(rst_text: str, fallback_title: str) -> str:
     md = strip_sphinx_only(md)
     md = rewrite_refs(md)
     md = fix_admonitions(md)
+    md = fix_gfm_alerts(md)
     md = fix_autolinks(md)
     md = fix_pandoc_artifacts(md)
     title, body = extract_title_and_strip(md)
