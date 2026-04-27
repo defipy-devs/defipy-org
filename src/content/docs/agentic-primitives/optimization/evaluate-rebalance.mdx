@@ -1,0 +1,95 @@
+---
+title: "EvaluateRebalance"
+description: "V2 rebalance-cost report — withdraw + swap + re-zap. Reports cost only; the verdict is left to the caller."
+---
+
+`EvaluateRebalance` is the **read-only**, stateless primitive that reports the all-in cost of cycling a V2 LP position — withdraw, swap to a single side, then re-zap into the same pool. **Reports cost only**; the rebalance verdict (worth it or not?) is left to the caller or a downstream LLM.
+
+V2 only — V3 raises `ValueError`.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `EvaluateRebalance().apply(lp, token_out, position_size_lp)` |
+| Uniswap V3 | ❌ Raises `ValueError` |
+| Balancer | ❌ Not applicable |
+| Stableswap | ❌ Not applicable |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 LP at current state. |
+| `token_out` | `ERC20` | The single side the user is converting to. Must be one of the pool's two tokens. |
+| `position_size_lp` | `float` | Position size in LP-token units. |
+
+## Mathematical contract
+
+**Three-leg pipeline:**
+1. Withdraw `position_size_lp` worth of liquidity → both tokens at pool ratio
+2. Swap the unwanted side back into `token_out` → bigger `token_out` balance
+3. Re-zap that `token_out` balance back into the pool via the optimal split
+
+The primitive runs all three legs against the *current* pool state and reports the round-trip cost. **Refuses to operate when the caller owns >99.9% of the pool** — there's no counterparty for the swap leg in that regime.
+
+**Cost components.** All in `token_out` units:
+
+- `withdrawal_total_out` — value received from the withdrawal + swap legs
+- `withdrawal_slippage_pct` — slippage on the withdrawal swap leg
+- `redeposit_slippage_pct` — slippage on the re-zap swap leg
+- `total_slippage_cost` — sum of both slippage legs
+- `total_slippage_pct` — `total_slippage_cost / current_value`
+
+**`expected_lp_tokens_after`** is the result of the re-zap — typically smaller than `position_size_lp` because the round-trip eats slippage. `lp_delta = expected_lp_tokens_after − position_size_lp` (negative).
+
+**Composition pattern: depth-chain.** Composes [`OptimalDepositSplit`](/agentic-primitives/optimization/optimal-deposit-split/) for the re-zap leg's optimal swap fraction, plus the V2 swap math directly for the initial withdrawal-side conversion.
+
+**No verdict.** The primitive does not return a "rebalance worth it" boolean. That's a function of (cost) vs (projected IL reduction at scenario shocks), and the projection requires assumptions about future price moves the primitive can't make. Consumers compose this primitive's cost report with [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) for the benefit side.
+
+## Example
+
+```python
+from defipy import EvaluateRebalance
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+v2_tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+result = EvaluateRebalance().apply(
+    lp_v2,
+    token_out=v2_tokens["DAI"],
+    position_size_lp=1000.0,
+)
+
+print(f"current_value:              {result.current_value:.4f}")
+print(f"withdrawal_total_out:       {result.withdrawal_total_out:.4f}")
+print(f"total_slippage_cost:        {result.total_slippage_cost:.4f}")
+print(f"total_slippage_pct:         {result.total_slippage_pct:.6f}")
+print(f"expected_lp_tokens_after:   {result.expected_lp_tokens_after:.4f}")
+print(f"lp_delta:                   {result.lp_delta:.4f}")
+```
+
+<div class="nb-output">{`current_value:              20000.0000
+withdrawal_total_out:       18975.6927
+total_slippage_cost:        2162.4265
+total_slippage_pct:         0.108121
+expected_lp_tokens_after:   997.0000
+lp_delta:                   -3.0000`}</div>
+
+A 1000-LP rebalance on this 100k DAI pool costs ~10.8% in slippage and produces ~997 LP after the round-trip — the position shrinks by 3 LP units to friction. Whether 10.8% is acceptable is a function of how much IL the rebalance avoids; this primitive doesn't decide.
+
+## How this composes
+
+- **Depth-chain over** [`OptimalDepositSplit`](/agentic-primitives/optimization/optimal-deposit-split/) for the re-zap leg.
+- Pair with [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) (benefit side) for end-to-end rebalance verdicts.
+
+## See also
+
+- [`OptimalDepositSplit`](/agentic-primitives/optimization/optimal-deposit-split/) — composed for the re-zap leg
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — projection for the benefit side
+- [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/) — V3 sibling for tick-range optimization
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — rebalance verdicts are multi-step LLM-side decisions composed over the leaf primitives.

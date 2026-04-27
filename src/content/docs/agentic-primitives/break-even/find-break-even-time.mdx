@@ -1,0 +1,110 @@
+---
+title: "FindBreakEvenTime"
+description: "V2/V3 break-even time projection. Given current fee accrual rate, returns days/blocks until cumulative fees match IL drag at current α. Linear projection; no rate uncertainty."
+---
+
+`FindBreakEvenTime` is the **read-only**, stateless primitive that estimates how long until accumulated fees compensate the current IL drag at the *current* fee accrual rate. Simple linear projection; no rate uncertainty modeling.
+
+V2/V3 only.
+
+:::note[When to use `FindBreakEvenTime` vs `FindBreakEvenPrice`]
+[`FindBreakEvenPrice`](/agentic-primitives/break-even/find-break-even-price/) answers *"at what prices do I break even?"* given a fixed `fee_income`. `FindBreakEvenTime` answers *"how long until I break even?"* given the current fee accrual rate and current IL drag. Different question, different inputs.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `FindBreakEvenTime(blocks_per_day=7200).apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, holding_period_days)` |
+| Uniswap V3 | `FindBreakEvenTime(blocks_per_day=7200).apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, holding_period_days, lwr_tick, upr_tick)` |
+| Balancer | ❌ Deferred (v2.1) — same derivation gap as `FindBreakEvenPrice` |
+| Stableswap | ❌ Deferred (v2.1) |
+
+## Constructor parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `blocks_per_day` | `int` *(default `7200`)* | Approximate Ethereum mainnet blocks per day for the days↔blocks conversion. |
+
+## `apply()` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange at current state. |
+| `lp_init_amt` | `float` | LP tokens held. |
+| `entry_x_amt`, `entry_y_amt` | `float` | Entry deposit amounts. |
+| `holding_period_days` | `float` | Days held so far. Required — used to derive the current fee accrual rate. |
+| `lwr_tick`, `upr_tick` | `int` *(V3 only)* | Position's tick range. |
+
+## Mathematical contract
+
+**Composes [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/)** for the current IL drag and current fee income, then divides:
+
+$$
+\text{fee\_rate\_per\_day} = \frac{\text{fee\_income}}{\text{holding\_period\_days}}
+$$
+
+$$
+\text{days\_to\_break\_even} = \frac{\text{current\_il\_drag}}{\text{fee\_rate\_per\_day}}
+$$
+
+`current_il_drag = max(0, |il_with_fees · hold_value|) − fee_income`. Projection assumes the fee rate continues at its observed level — **simple linear extrapolation, no uncertainty modeling**.
+
+**`diagnosis` enum.** Four values:
+- `"already_broken_even"` — current `net_pnl ≥ 0`
+- `"no_il_drag"` — IL is zero or favorable; break-even is immediate
+- `"no_fee_income"` — `fee_income == 0`; `days_to_break_even = None`, `blocks_to_break_even = None`
+- `"projected"` — normal case; the linear projection applies
+
+**V2 vs V3 caveat.** V2 has per-swap fee history (`fee0_arr`/`fee1_arr`) that gives an honest fee accrual rate. V3 has only the global accumulator — the rate computed from `fee_income / holding_period_days` averages over the full holding window rather than reflecting recent activity. Callers wanting *recent* fee rate on V3 need to feed in a shorter `holding_period_days` window.
+
+**Linear extrapolation caveat.** Real fee accrual is non-stationary (volume, volatility, range residency). The primitive surfaces the rate as observed; the projection's quality depends on regime stability. For periods with major volume changes, treat the result as a rough order of magnitude.
+
+## Example
+
+```python
+from defipy import FindBreakEvenTime
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+# ETH up 25% from entry, 30 days held — same scenario as AnalyzePosition example.
+result = FindBreakEvenTime().apply(
+    lp_v2,
+    lp_init_amt=10000.0,
+    entry_x_amt=1000.0,
+    entry_y_amt=80000.0,
+    holding_period_days=30.0,
+)
+
+print(f"current_il_drag:         {result.current_il_drag:.4f}")
+print(f"fee_income_to_date:      {result.fee_income_to_date:.4f}")
+print(f"fee_rate_per_day:        {result.fee_rate_per_day:.4f}")
+print(f"days_to_break_even:      {result.days_to_break_even}")
+print(f"already_broken_even:     {result.already_broken_even}")
+print(f"diagnosis:               {result.diagnosis}")
+```
+
+<div class="nb-output">{`current_il_drag:         11.1456
+fee_income_to_date:      211.1456
+fee_rate_per_day:        7.0382
+days_to_break_even:      0.0
+blocks_to_break_even:    0
+already_broken_even:     True
+diagnosis:               already_broken_even`}</div>
+
+Position is already net-positive — `days_to_break_even = 0.0`, `diagnosis = already_broken_even`. In a scenario where IL dominates fees, the projection would return a positive day count.
+
+## How this composes
+
+- **Depth-chain over** [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) for the IL drag and fee income inputs.
+- Independent of [`FindBreakEvenPrice`](/agentic-primitives/break-even/find-break-even-price/) — that primitive uses closed-form alphas; this one uses real-time accrual.
+
+## See also
+
+- [`FindBreakEvenPrice`](/agentic-primitives/break-even/find-break-even-price/) — price-based break-even
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — composed leaf for current IL + fees
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10. Break-even questions are typically derived LLM-side after `AnalyzePosition`.

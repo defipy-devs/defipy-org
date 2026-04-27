@@ -1,0 +1,98 @@
+---
+title: "CalculateSlippage"
+description: "V2/V3 pre-trade slippage and price-impact decomposition. Spot price from raw reserves; execution price from get_amount_out; slippage_pct = 1 - execution/spot."
+---
+
+`CalculateSlippage` is the **read-only**, stateless primitive that decomposes a proposed swap's friction into spot price, execution price, slippage cost (in token-out units), price impact, and the maximum trade size that stays under 1% slippage.
+
+V2/V3 only — Balancer/Stableswap raise `ValueError` (deferred to v2.1, Bucket A).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `CalculateSlippage().apply(lp, token_in, amount_in)` |
+| Uniswap V3 | `CalculateSlippage().apply(lp, token_in, amount_in, lwr_tick, upr_tick)` |
+| Balancer | ❌ Deferred (v2.1) — raises `ValueError` |
+| Stableswap | ❌ Deferred (v2.1) — raises `ValueError` |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange. |
+| `token_in` | `ERC20` | Token being swapped in. Must be one of the pool's two tokens. |
+| `amount_in` | `float` | Quantity of `token_in` to swap. Must be `> 0`. |
+| `lwr_tick`, `upr_tick` | `int` *(V3 only)* | Tick range to evaluate against. |
+
+## Mathematical contract
+
+**Spot price** from raw reserves (no fee):
+
+$$
+p_{spot} = \frac{r_{out}}{r_{in}}
+$$
+
+**Execution price** from the pool's `get_amount_out` (with fee):
+
+$$
+p_{exec} = \frac{\text{amount\_out}}{\text{amount\_in}}
+$$
+
+**Slippage** as the relative gap between spot and execution:
+
+$$
+\text{slippage\_pct} = 1 - \frac{p_{exec}}{p_{spot}}
+$$
+
+`slippage_cost = (amount_in · p_spot) − amount_out` in token-out units. Always `>= 0` by no-arbitrage.
+
+**`max_size_at_1pct` is V2-only.** For V2 with 0.3% fee, the slippage at trade size `dx` against reserves `(x, y)` is closed-form; inverting to find the size where `slippage_pct = 0.01` is also closed-form. V3 doesn't have this in v1 because tick-walking infrastructure isn't implemented yet (tracked alongside `AssessLiquidityDepth`); V3's `max_size_at_1pct` returns `None`.
+
+**V3 multi-tick caveat.** For V3 trades that cross multiple ticks, `price_impact_pct` is *approximate* — it uses the single-tick assumption. For trades that stay inside the active tick range the value is exact.
+
+**Forward-look:** Once Bal/Ssw extensions land (v2.1, Bucket A), [`CompareProtocols.slippage_at_amount`](/agentic-primitives/comparison/compare-protocols/) closes its current `None` gap automatically — no API break expected.
+
+## Example
+
+```python
+from defipy import CalculateSlippage
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+# Quote a 10 ETH -> DAI swap.
+result = CalculateSlippage().apply(lp_v2, tokens["ETH"], amount_in=10.0)
+
+print(f"spot_price:         {result.spot_price:.4f}")
+print(f"execution_price:    {result.execution_price:.4f}")
+print(f"slippage_pct:       {result.slippage_pct:.6f}")
+print(f"slippage_cost:      {result.slippage_cost:.4f}")
+print(f"price_impact_pct:   {result.price_impact_pct:.6f}")
+print(f"max_size_at_1pct:   {result.max_size_at_1pct:.4f}")
+```
+
+<div class="nb-output">{`spot_price:         100.0000
+execution_price:    98.7158
+slippage_pct:       0.012842
+slippage_cost:      12.8420
+price_impact_pct:   0.019675
+max_size_at_1pct:   7.0920`}</div>
+
+A 10 ETH swap on this 1000 ETH / 100k DAI pool faces ~1.28% slippage; trades at or below ~7.09 ETH would stay under the 1% threshold.
+
+## How this composes
+
+- Independent leaf primitive — does not depend on other agentic primitives.
+- Composed *into* by [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) for the slippage axis (V2/V3 only in v2.0).
+
+## See also
+
+- [`DetectMEV`](/agentic-primitives/execution/detect-mev/) — post-trade theoretical-vs-actual check
+- [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) — composes this primitive
+- [`Swap`](/api/primitive/core/swap/) — mutating execution
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset — high-traffic pre-trade question.

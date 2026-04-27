@@ -1,0 +1,95 @@
+---
+title: "CompareFeeTiers"
+description: "V3-only fee-tier comparison for the same token pair. Breadth-chain over CheckPoolHealth + CheckTickRangeStatus per candidate. observed_fee_yield = cumulative_fees / TVL."
+---
+
+`CompareFeeTiers` is the **read-only**, stateless primitive that compares Uniswap V3 fee tiers for the same token pair. **V3-only by definition** — V2 has a single 30-bps fee, Bal/Ssw don't have fee tiers in this sense.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Single fee tier — comparison undefined |
+| Uniswap V3 | `CompareFeeTiers().apply(candidates)` |
+| Balancer | ❌ Not applicable |
+| Stableswap | ❌ Not applicable |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `candidates` | `list[FeeTierCandidate]` | List of candidates. Each carries `lp`, `position_size_lp`, `lwr_tick`, `upr_tick`, and optional `name`. All candidates must be the same token pair (mismatched pairs raise `ValueError`); non-V3 pools raise `ValueError`. |
+
+## Mathematical contract
+
+**Breadth-chain over** [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) and [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) per candidate. For each candidate the primitive collects:
+
+- `pool_tvl_in_token0` (from `CheckPoolHealth.tvl_in_token0`)
+- `cumulative_fees_in_token0`
+- `observed_fee_yield = cumulative_fees / pool_tvl` — **cumulative, not annualized** because pool age is unknown to the primitive
+- `in_range` (from `CheckTickRangeStatus.in_range`)
+- `range_width_pct`
+
+**Ranking surfaces.** Two ranking arrays:
+- `ranking_by_observed_fee_yield` — descending; `None`-yield candidates sort last
+- `ranking_by_tvl` — descending by `pool_tvl_in_token0`
+
+**`observed_fee_yield = None`** when the pool has zero TVL or zero collected fees recorded. These candidates appear at the end of the yield ranking.
+
+**`position_size_lp` is currently an echo.** Stored on the result for round-trip clarity but **not used in v1 ranking**. Future work could project per-candidate fee capture as a function of position size; for now the ranking is pool-level.
+
+## Example
+
+```python
+from defipy import CompareFeeTiers
+from defipy.utils.data import FeeTierCandidate
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
+
+# MockProvider exposes a single V3 ETH/DAI recipe (3000bps fee).
+# In practice you'd pass 2-3 candidates from different fee tiers
+# (500 / 3000 / 10000) of the same pair to drive the ranking.
+candidates = [
+    FeeTierCandidate(
+        lp=lp_v3, position_size_lp=10000.0,
+        lwr_tick=45000, upr_tick=47000,
+        name="3000bps_narrow",
+    ),
+]
+
+result = CompareFeeTiers().apply(candidates)
+
+print(f"numeraire:                       {result.numeraire}")
+print(f"pair:                            {result.pair}")
+print(f"ranking_by_observed_fee_yield:   {result.ranking_by_observed_fee_yield}")
+print(f"ranking_by_tvl:                  {result.ranking_by_tvl}")
+for t in result.tiers:
+    print(f"  {t.name}: fee_tier_bps={t.fee_tier_bps}, tvl={t.pool_tvl_in_token0:.4f}, "
+          f"yield={t.observed_fee_yield}, in_range={t.in_range}")
+```
+
+<div class="nb-output">{`numeraire:                       ETH
+pair:                            ETH/DAI
+ranking_by_observed_fee_yield:   ['3000bps_narrow']
+ranking_by_tvl:                  ['3000bps_narrow']
+
+  3000bps_narrow: fee_tier_bps=30, tvl=2000.0000, yield=None, in_range=True`}</div>
+
+`yield=None` here because the MockProvider snapshot has no swap history — fees haven't accrued. On a real pool, the cumulative-fees / TVL ratio gives a comparable number across candidates.
+
+## How this composes
+
+- **Breadth-chain over** [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) and [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) per candidate.
+- Independent of [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) — that primitive compares two pools on different protocols; this one compares N V3 pools on the same pair.
+
+## See also
+
+- [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) — cross-protocol pairwise comparison
+- [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — leaf primitive used per candidate
+- [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) — leaf primitive used per candidate
+- [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/) — adjacent V3 question (range-width tradeoff)
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10.

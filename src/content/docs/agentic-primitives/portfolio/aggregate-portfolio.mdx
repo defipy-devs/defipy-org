@@ -1,0 +1,116 @@
+---
+title: "AggregatePortfolio"
+description: "Cross-protocol portfolio breadth-chain. Aggregates N positions (V2/V3/Balancer/Stableswap) into a single common-numeraire view. Composition-layer dispatch."
+---
+
+`AggregatePortfolio` is the **read-only**, stateless primitive that aggregates N LP positions across V2, V3, Balancer, and Stableswap into a single portfolio-level view. It's the canonical **breadth-chain** — one primitive applied N times, results aggregated — with cross-protocol dispatch living in the aggregator rather than in the per-protocol leaf analyzers.
+
+All positions in a single call must share a common first-token numeraire. Mismatched first-tokens raise `ValueError` immediately (no silent coercion).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Mixed (V2/V3/Balancer/Stableswap) | `AggregatePortfolio().apply(positions)` |
+
+The single `positions` argument dispatches across protocols by `isinstance` on each position's `lp` object — calling out to the appropriate sibling [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) / [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) / [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) per position.
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `positions` | `list[PortfolioPosition]` | List of `PortfolioPosition` objects. Each wraps `lp`, `lp_init_amt`, entry amounts, and protocol-specific fields. |
+
+### Protocol-specific input shapes
+
+The `PortfolioPosition` dataclass diverges per protocol:
+
+| Protocol | Required fields on `PortfolioPosition` | Notes |
+|---|---|---|
+| Uniswap V2 | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt` | Standard pair shape. |
+| Uniswap V3 | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt`, `lwr_tick`, `upr_tick` | Tick range required for concentrated liquidity. |
+| Balancer | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt` | Same paired shape; mapped to base/opp internally. |
+| Stableswap | `lp`, `lp_init_amt`, `entry_amounts` | **Different shape** — `entry_amounts` is a list `[x0, x1]` in pool insertion order. Leave `entry_x_amt`/`entry_y_amt` as `None`. |
+
+Common to all: `holding_period_days` (optional, enables real-APR fields on per-position summaries), `name` (optional, used as ranking label).
+
+## Mathematical contract
+
+**Breadth-chain composition.** For each position, dispatch to the matching analyzer; collect typed `PositionAnalysis` (or its sibling) per position; aggregate scalar fields (`current_value`, `hold_value`, `net_pnl`, `fee_income`) by summation in the common numeraire.
+
+**Numeraire enforcement.** The numeraire is the **shared first-token symbol** across positions. Mixed first-tokens (e.g. one ETH-numeraire position and one USDC-numeraire position) raise `ValueError`:
+
+```
+AggregatePortfolio: positions must share a common first-token numeraire.
+Got mixed first tokens: ['ETH', 'USDC']. Either group positions by first-
+token symbol and call once per group, or rebase values externally before
+aggregation.
+```
+
+This is intentional — the primitive surfaces the shape, the caller handles cross-numeraire conversion if needed.
+
+**Stableswap unreachable-α propagation.** If [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) returns `il_percentage = None` for a position (unreachable α), that position contributes `0.0` to portfolio totals and a note to `shared_exposure_warnings`.
+
+**Balancer/Stableswap fee_income.** Always `0.0` per the upstream limit (see the per-protocol analyzer pages).
+
+**Composition pattern: composition-layer dispatch.** Per heuristic #13: composition-layer dispatch scales (one aggregator handles N protocols), primitive-layer dispatch does not (forcing each leaf analyzer to handle all four protocols would balloon maintenance). Cross-protocol dispatch belongs *here*, not on the analyzers.
+
+## Example
+
+```python
+from defipy import AggregatePortfolio
+from defipy.utils.data import PortfolioPosition
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
+lp_bal = builder.build(provider.snapshot("eth_dai_balancer_50_50"))
+
+# Three ETH/DAI positions across three protocols, all entered at 80 DAI/ETH.
+positions = [
+    PortfolioPosition(
+        lp=lp_v2, lp_init_amt=10000.0,
+        entry_x_amt=1000.0, entry_y_amt=80000.0,
+        holding_period_days=30.0, name="V2 ETH/DAI",
+    ),
+    PortfolioPosition(
+        lp=lp_v3, lp_init_amt=10000.0,
+        entry_x_amt=1000.0, entry_y_amt=80000.0,
+        lwr_tick=-887220, upr_tick=887220,
+        holding_period_days=30.0, name="V3 ETH/DAI full-range",
+    ),
+    PortfolioPosition(
+        lp=lp_bal, lp_init_amt=100.0,
+        entry_x_amt=1000.0, entry_y_amt=80000.0,
+        holding_period_days=30.0, name="Balancer ETH/DAI 50/50",
+    ),
+]
+
+result = AggregatePortfolio().apply(positions)
+
+print(f"numeraire:           {result.numeraire}")
+print(f"total_value:         {result.total_value:.4f}")
+print(f"total_net_pnl:       {result.total_net_pnl:.4f}")
+print(f"pnl_ranking:         {result.pnl_ranking}")
+```
+
+<div class="nb-output">{`numeraire:           ETH
+total_value:         204000.0000
+total_net_pnl:       20400.0000
+pnl_ranking:         ['V2 ETH/DAI', 'V3 ETH/DAI full-range', 'Balancer ETH/DAI 50/50']`}</div>
+
+## How this composes
+
+- **Breadth-chain over** [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/), [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/), and [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — dispatches per-position by protocol type.
+- Independent — not composed into other primitives. The aggregator is the top of the breadth-chain.
+
+## See also
+
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — V2/V3 leaf analyzer
+- [`AnalyzeBalancerPosition`](/agentic-primitives/position-analysis/analyze-balancer-position/) — Balancer leaf analyzer
+- [`AnalyzeStableswapPosition`](/agentic-primitives/position-analysis/analyze-stableswap-position/) — Stableswap leaf analyzer
+- [`CompareProtocols`](/agentic-primitives/comparison/compare-protocols/) — pairwise cross-protocol comparison (depth-chain, not breadth)
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10. Composition primitives are better assembled LLM-side from `Analyze*Position` calls so the agent can decide which positions to include and which sub-views to surface.

@@ -1,0 +1,94 @@
+---
+title: "EvaluateTickRanges"
+description: "V3-only tick-range tradeoff evaluation. Capital efficiency vs IL exposure vs fee capture across N candidate ranges. optimal_range = max(fee_capture / il_exposure)."
+---
+
+`EvaluateTickRanges` is the **read-only**, stateless primitive that quantifies the capital-efficiency vs IL-exposure vs fee-capture tradeoff across N V3 candidate tick ranges. Optionally compares one wide range against a split of N narrow ranges.
+
+V3 only.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ V2 has no concept of tick ranges |
+| Uniswap V3 | `EvaluateTickRanges(price_shock=0.10).apply(lp, candidates, split_comparison=None)` |
+| Balancer | ❌ Not applicable |
+| Stableswap | ❌ Not applicable |
+
+## Constructor parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `price_shock` | `float` *(default `0.10`)* | Symmetric price shock used to evaluate IL exposure per candidate. |
+
+## `apply()` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapV3Exchange` | V3 LP at current state. |
+| `candidates` | `list[TickRangeCandidate]` | Each carries `lwr_tick`, `upr_tick`, and optional `name`. All candidates must be **in-range** vs the current tick — out-of-range candidates raise `ValueError`. |
+| `split_comparison` | `tuple` *(optional)* | Optional one-vs-N split comparison. Format details on the result dataclass. |
+
+## Mathematical contract
+
+**Per-candidate metrics:**
+- `capital_efficiency` — relative to a full-range position (full range = 1.0; tighter ranges = higher number)
+- `il_exposure` — IL at the constructor's `price_shock` evaluated against the candidate's range factor
+- `fee_capture_pct` — heuristic share of pool fees the candidate would capture (function of range tightness and current tick position within the range)
+- `range_width_pct` — percentage range width
+
+**`optimal_range`.** Highest `fee_capture_pct / il_exposure` ratio (with a `1e-9` floor to avoid divide-by-zero on zero-IL candidates). The intuition: best return per unit of IL risk.
+
+**`fee_capture_pct` is a heuristic**, not a measured quantity — the primitive estimates capture as a function of range tightness and current-tick position, not a measured fee history. Useful for relative ranking; less useful for absolute fee predictions.
+
+**All-candidates-in-range constraint.** If any candidate's range doesn't include the current tick, the primitive raises `ValueError`. Out-of-range candidates have undefined `il_exposure` (the IL formula assumes the position is participating in the swap), so the primitive refuses rather than silently returning misleading numbers.
+
+## Example
+
+```python
+from defipy import EvaluateTickRanges
+from defipy.utils.data import TickRangeCandidate
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
+
+# Current ETH/DAI tick ≈ 46054. Three candidate ranges around it:
+candidates = [
+    TickRangeCandidate(lwr_tick=45000, upr_tick=47000, name="narrow"),
+    TickRangeCandidate(lwr_tick=44000, upr_tick=48000, name="medium"),
+    TickRangeCandidate(lwr_tick=-887220, upr_tick=887220, name="full_range"),
+]
+
+result = EvaluateTickRanges().apply(lp_v3, candidates)
+
+print(f"price_shock used:   {result.price_shock}")
+for r in result.ranges:
+    print(f"  {r.name:>12}  cap_eff={r.capital_efficiency:.4f}  "
+          f"il_exposure={r.il_exposure:.6f}  fee_pct={r.fee_capture_pct:.6f}")
+print(f"optimal_range: {result.optimal_range.name}")
+```
+
+<div class="nb-output">{`price_shock used:   0.1
+        narrow  cap_eff=10.5088  il_exposure=6.162096  fee_pct=0.001050
+        medium  cap_eff=5.5169  il_exposure=0.174863  fee_pct=0.000551
+   full_range  cap_eff=1.0000  il_exposure=0.001260  fee_pct=0.000100
+optimal_range: full_range`}</div>
+
+The narrow range has 10× the capital efficiency but 6× the IL exposure at the 10% shock — the ratio favors `full_range` for this scenario. Different `price_shock` values produce different `optimal_range` selections; tune the shock to the volatility regime you care about.
+
+## How this composes
+
+- Independent leaf primitive — does not depend on other agentic primitives.
+- Composed *into* by [`CompareFeeTiers`](/agentic-primitives/comparison/compare-fee-tiers/) for the per-tier range evaluation when ranges differ across candidates.
+
+## See also
+
+- [`EvaluateRebalance`](/agentic-primitives/optimization/evaluate-rebalance/) — V2 sibling for rebalance-cost evaluation
+- [`CompareFeeTiers`](/agentic-primitives/comparison/compare-fee-tiers/) — adjacent V3 question (fee-tier choice)
+- [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) — V3 in-range check
+- [Uniswap V3 math](/math/univ3-math/) — concentrated-liquidity invariant
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — multi-step optimization is composed LLM-side from leaf primitives.

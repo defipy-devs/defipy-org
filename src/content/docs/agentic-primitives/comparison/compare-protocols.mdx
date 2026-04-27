@@ -1,0 +1,95 @@
+---
+title: "CompareProtocols"
+description: "Pairwise cross-protocol comparison — IL at a price shock + slippage at a trade size. Depth-chain over per-protocol IL helpers + CalculateSlippage."
+---
+
+`CompareProtocols` is the **read-only**, stateless primitive that compares IL at a price shock and slippage at a trade size between two pools — pools may be **different protocols**. The one question DeFiPy can answer cleanly because it carries exact-math implementations of all four AMMs in the same process space.
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Mixed (any two of V2/V3/Balancer/Stableswap) | `CompareProtocols(price_shock=0.10, v3_range_pct=0.10).apply(lp_a, lp_b, amount, token_in=None)` |
+
+`token_in` defaults to `lp_a`'s token0 — both pools must contain it.
+
+## Constructor parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `price_shock` | `float` *(default `0.10`)* | Symmetric ±shock magnitude for IL evaluation. |
+| `v3_range_pct` | `float` *(default `0.10`)* | Auto-detected V3 range width centered on current tick. Snapped to the pool's `tick_spacing`. |
+
+## `apply()` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp_a`, `lp_b` | `Exchange` | Two pool objects. Each must be one of V2/V3/Balancer/Stableswap. |
+| `amount` | `float` | Trade size for slippage evaluation. |
+| `token_in` | `ERC20` *(optional)* | Token to use as the trade input. Defaults to `lp_a.token0`. Both pools must contain this token. |
+
+### Protocol-specific output behavior
+
+The signature is uniform; what diverges is **which output fields are populated** per protocol:
+
+| Protocol | `il_at_shock` | `slippage_at_amount` | Notes |
+|---|---|---|---|
+| Uniswap V2 | Always populated | Always populated | |
+| Uniswap V3 | Conditional — `None` when `price_shock > v3_range_pct` | Always populated | Out-of-range regime: position has exited the active tick range. |
+| Balancer | Always populated | Always `None` (v2.0) | [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) is V2/V3-only; Balancer slippage closes once Bucket A lands. |
+| Stableswap | Conditional — `None` on `DepegUnreachableError` | Always `None` (v2.0) | High `A` + large shock can produce unreachable target state. |
+
+## Mathematical contract
+
+**Depth-chain composition.** Each per-pool metric fans out to the appropriate IL helper by protocol dispatch (`isinstance` against `BalancerExchange` / `StableswapExchange` plus `.version` for V2/V3); slippage fans out to [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) for V2/V3 (None for Bal/Ssw). Results aggregate into a pairwise `ProtocolComparison` with independent `il_advantage` and `slippage_advantage` fields.
+
+**No single winner label.** Different protocols win on different axes (IL vs slippage vs TVL depth vs reachability). Collapsing to one number hides the trade-off — which is the whole point. Independent advantage fields preserve each axis; callers building a best-of-both-worlds summary consume both.
+
+**Advantage labels.** Each axis: `"pool_a"`, `"pool_b"`, `"tied"`, or `None` (when either side is `None`). `"tied"` uses an `_TIED_EPSILON = 1e-9` floor for IL equality.
+
+**V3 range auto-detection.** V3 needs a tick range to evaluate IL. The primitive auto-picks a symmetric range of `±v3_range_pct` around the pool's current tick (default ±10%), snapped to `tick_spacing`. Matches [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/)'s default shock semantics — a "moderate concentration" stance that shows V3's narrower IL inside the range.
+
+**V3 out-of-range regime.** When `price_shock > v3_range_pct`, the shocked price has crossed the position's tick boundary; IL framing doesn't apply (the position is now 100% one side). `il_at_shock = None` in that case; the `notes` field surfaces this.
+
+**Stableswap reachability.** If the shock pushes the target past `StableswapImpLoss`'s reachability bound, `DepegUnreachableError` is caught and `il_at_shock = None` — caller's `notes` field gets a corresponding entry.
+
+## Example
+
+```python
+from defipy import CompareProtocols
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+lp_bal = builder.build(provider.snapshot("eth_dai_balancer_50_50"))
+v2_tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+result = CompareProtocols().apply(
+    lp_v2,
+    lp_bal,
+    amount=10.0,
+    token_in=v2_tokens["ETH"],
+)
+
+print(f"il_advantage:        {result.il_advantage}")
+print(f"slippage_advantage:  {result.slippage_advantage}")
+print(f"notes: {result.notes}")
+```
+
+<div class="nb-output">{`il_advantage:        tied
+slippage_advantage:  None
+
+notes: ['pool_b: Balancer slippage not computed in v1 (CalculateSlippage is Uniswap-only)']`}</div>
+
+## How this composes
+
+- **Depth-chain over** `UniswapImpLoss`, `BalancerImpLoss`, `StableswapImpLoss`, plus [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) for the slippage axis.
+- Composed *into* by ad-hoc agent flows comparing protocols on the same token pair before deciding where to LP.
+
+## See also
+
+- [`CompareFeeTiers`](/agentic-primitives/comparison/compare-fee-tiers/) — V3 fee-tier comparison (single-protocol)
+- [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) — slippage leg in isolation
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — agents typically compose from leaf primitives (`Analyze*`, `CalculateSlippage`) for protocol-comparison decisions.

@@ -1,0 +1,120 @@
+---
+title: "DetectMEV"
+description: "Post-trade MEV-extraction detector. Compares actual on-chain output against the invariant-predicted theoretical output for the same trade — gap above threshold flags likely_frontrun."
+---
+
+`DetectMEV` is the **read-only**, stateless primitive that compares an *actual* on-chain swap output against the invariant-predicted *theoretical* output for the same trade against the same `lp` state. A gap above the threshold flags `likely_frontrun = True`.
+
+V2/V3 only — Balancer/Stableswap aren't supported in v1.
+
+:::caution[Caller is responsible for historical lp state]
+The primitive uses the `lp` it's given as the reference state. To detect MEV on a *historical* trade, the caller must supply `lp` reconstructed at the correct historical block — the primitive doesn't time-travel. Pass `lp` *as it was* immediately before the trade you're analyzing.
+:::
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `DetectMEV(frontrun_threshold_bps=50.0).apply(lp, token_in, amount_in, actual_output)` |
+| Uniswap V3 | `DetectMEV(frontrun_threshold_bps=50.0).apply(lp, token_in, amount_in, actual_output, lwr_tick, upr_tick)` |
+| Balancer | ❌ Not supported in v1 |
+| Stableswap | ❌ Not supported in v1 |
+
+## Constructor parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `frontrun_threshold_bps` | `float` *(default `50.0`)* | Minimum *underdelivery* in bps to flag `likely_frontrun = True`. 50 bps (0.5%) is large enough to be above normal slippage variance and small enough to catch meaningful sandwich extraction. |
+
+## `apply()` parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange at the *pre-trade* state. |
+| `token_in` | `ERC20` | Token swapped in. Must be one of the pool's two tokens. |
+| `amount_in` | `float` | Trade size that produced `actual_output`. |
+| `actual_output` | `float` | The output the trader actually received (from chain). |
+| `lwr_tick`, `upr_tick` | `int` *(V3 only)* | Range the trade interacted with. |
+
+## Mathematical contract
+
+Same comparison shape as [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) but inverted in framing: instead of asking *"does the pool's quote match the invariant at the stated fee?"*, this asks *"does the **executed** trade match what the invariant predicts on the pre-trade state?"*
+
+**Theoretical output** from `lp.get_amount_out(amount_in, token_in)` against the pre-trade state — what the trade *would* have produced absent MEV.
+
+**Extraction** as the gap:
+
+$$
+\text{extraction\_amount} = \text{theoretical\_output} - \text{actual\_output}
+$$
+
+$$
+\text{extraction\_bps} = \frac{\text{extraction\_amount}}{\text{theoretical\_output}} \cdot 10{,}000
+$$
+
+**`direction` enum.** Three values:
+- `"underdelivered"` — actual < theoretical (extraction_bps > 0)
+- `"overdelivered"` — actual > theoretical (extraction_bps < 0)
+- `"matches"` — within float-precision noise
+
+**`likely_frontrun = True`** only when `direction == "underdelivered"` AND `extraction_bps > frontrun_threshold_bps`. **Overdelivery never flags** — getting *more* than the invariant predicts isn't MEV against the trader.
+
+**Direction labels are descriptive, not accusatory.** `underdelivered` is signal — it could mean a sandwich attack, a backrun that improved the pool's price for the next trader, or routing fees. The primitive surfaces the divergence; the verdict belongs to the caller.
+
+## Example
+
+First example: actual ≈ theoretical → not a frontrun.
+
+```python
+from defipy import DetectMEV
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+
+result = DetectMEV().apply(
+    lp_v2,
+    token_in=tokens["ETH"],
+    amount_in=10.0,
+    actual_output=987.0,    # ≈ theoretical
+)
+print(f"extraction_bps:      {result.extraction_bps:.2f}")
+print(f"direction:           {result.direction}")
+print(f"likely_frontrun:     {result.likely_frontrun}")
+```
+
+<div class="nb-output">{`extraction_bps:      1.60
+direction:           underdelivered
+likely_frontrun:     False`}</div>
+
+Second example: ~5% short — frontrun flagged.
+
+```python
+result = DetectMEV().apply(
+    lp_v2,
+    token_in=tokens["ETH"],
+    amount_in=10.0,
+    actual_output=937.0,    # ~5% short
+)
+print(f"extraction_bps:      {result.extraction_bps:.2f}")
+print(f"likely_frontrun:     {result.likely_frontrun}")
+```
+
+<div class="nb-output">{`extraction_bps:      508.11
+direction:           underdelivered
+likely_frontrun:     True`}</div>
+
+## How this composes
+
+- Independent leaf primitive — does not depend on other agentic primitives.
+- Adjacent in shape to [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) (both are theoretical-vs-actual checks) but distinct in input — `DetectMEV` takes a real `actual_output` from chain; `DetectFeeAnomaly` runs a synthetic test trade.
+
+## See also
+
+- [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) — synthetic-trade theoretical-vs-actual on the same pool
+- [`CalculateSlippage`](/agentic-primitives/execution/calculate-slippage/) — pre-trade slippage analysis
+- [`Swap`](/api/primitive/core/swap/) — mutating execution
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — post-trade forensic; agents typically ask after observing a settled trade, less common than pre-trade slippage.
