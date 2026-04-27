@@ -37,6 +37,17 @@ CalculateSlippage().apply(
 
 `max_size_at_1pct` is `None` for V3 (tick-crossing math); `float` for V2 (closed-form). V3 trades that cross multiple ticks have approximate `price_impact_pct` (single-tick assumption).
 
+**Protocol scope.** `CalculateSlippage` is V2/V3-only in v2.0 — calling it against a Balancer or Stableswap pool raises `ValueError`. The math is available in `BalancerExchange.get_amount_out` and `StableswapExchange.get_amount_out`; the gap is primitive packaging:
+
+| Protocol | Coverage | Notes |
+|---|---|---|
+| Uniswap V2 | Full | `slippage_pct`, `slippage_cost`, `price_impact_pct`, `max_size_at_1pct`. |
+| Uniswap V3 | Partial | All fields except `max_size_at_1pct` populated; max-size analysis is V2-only because V3's tick-walking infrastructure isn't implemented yet (tracked alongside `AssessLiquidityDepth`). |
+| Balancer | Deferred (v2.1) | Bucket A. Sibling primitive (`CalculateBalancerSlippage`) or protocol-dispatching extension planned. Calling `CalculateSlippage` against a Balancer pool raises `ValueError`. |
+| Stableswap | Deferred (v2.1) | Same as Balancer; sibling primitive planned. |
+
+Once the Balancer/Stableswap extensions land (v2.1, Bucket A), [`CompareProtocols.slippage_at_amount`](/agentic-primitives/comparison/) closes its current `None` gap automatically — no API break expected.
+
 ```python
 from defipy import CalculateSlippage
 
