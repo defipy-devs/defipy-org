@@ -184,7 +184,30 @@ def fix_pandoc_artifacts(text: str) -> str:
     text = _CONTENT_REFERENCE.sub("", text)
     text = _TITLE_REF_SPAN.sub(r"`\1`", text)
     text = _RAW_IMG.sub(r"![](/img/\1)", text)
+    text = fix_automodule_divs(text)
     return text
+
+
+# Pandoc emits Sphinx `.. automodule:: path` (with `:members: A, B`) as:
+#     <div class="automodule" members="A, B">
+#     uniswappy.cpt.factory
+#     </div>
+# Sphinx autodoc would pull docstrings at build time; we just render a
+# reference line pointing at the module + listed members.
+_AUTOMODULE = re.compile(
+    r'<div class="automodule"(?:\s+members="([^"]*)")?>\s*\n+\s*([^\n<]+?)\s*\n+\s*</div>',
+)
+
+
+def fix_automodule_divs(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        members = m.group(1)
+        module = m.group(2).strip()
+        out = f"**Module:** `{module}`"
+        if members:
+            out += f" — members: `{members}`"
+        return out
+    return _AUTOMODULE.sub(repl, text)
 
 
 # Pandoc renders RST hash-banners (`####\n title \n####`) as `# title`.
