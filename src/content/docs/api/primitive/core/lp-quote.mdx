@@ -1,0 +1,167 @@
+---
+title: "LPQuote"
+description: "Read-only quoting: token prices, swap-output forecasts, and LP↔token conversion. Cross-protocol, never mutates state."
+---
+
+```python
+class defipy.cpt.quote.LPQuote(include_fee=True)
+```
+
+Read-only quoting. `LPQuote` answers the questions a UI or analytics layer asks before executing a swap or computing a position value: what's the spot price, what would I receive for this swap, what's my LP balance worth, what would 1 token mint in LP tokens?
+
+`LPQuote` is the **nucleus of cross-protocol routing** in DeFiPy. Every meaningful read — spot price, reserve access, LP↔token conversion, trade simulation — ultimately routes through it. When other primitives need a fee-aware quote, they call `LPQuote` rather than `pool.get_amount_out` directly, because the latter is V2-specific.
+
+Available on **Uniswap V2 and Uniswap V3**. Balancer and Stableswap support is in development.
+
+## Constructor parameters
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `include_fee` | `bool` | `True` | Whether returned amounts account for the pool's swap fee. Set `False` for fee-free invariant reads (e.g. when computing IL with a fee-free spot ratio, the way `BalancerImpLoss` does internally). |
+
+## Methods
+
+### get_price
+
+```python
+price = LPQuote().get_price(pool, token_in)
+```
+
+Spot price of `token_in` denominated in the other token of the pair. Polymorphic across V2 and V3 — returns the raw reserve ratio, no fee applied.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool to read. |
+| `token_in` | `ERC20` | The token whose price you want. |
+
+**Returns**: `float` — units of the other token per unit of `token_in`.
+
+### get_amount
+
+```python
+amount_out = LPQuote(include_fee=True).get_amount(pool, token_in, amount_in)
+```
+
+Forecast the swap output for swapping `amount_in` of `token_in` into the pool. With `include_fee=True` (the default), returns the same value [`Swap`](/api/primitive/core/swap/) would produce — useful for slippage previews.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool to read. |
+| `token_in` | `ERC20` | The token being swapped in. |
+| `amount_in` | `float` | Amount of `token_in`. |
+
+**Returns**: `float` — the amount of the other token a user would receive.
+
+### get_amount_from_lp
+
+```python
+amount = LPQuote().get_amount_from_lp(pool, token, amount_lp)
+```
+
+Convert an LP-token balance into a token-denominated amount. Useful for "what's my LP position worth in ETH" displays.
+
+The `include_fee=False` form returns settlement value via an internal `RebaseIndexToken` swap; this is *scale-dependent* and crashes with `ZeroDivisionError` on V3 at 100% pool ownership — prefer the paper-share interpretation (linear share of reserves) for analytics primitives.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool to read. |
+| `token` | `ERC20` | The token to denominate the value in. |
+| `amount_lp` | `float` | LP-token amount to convert. |
+
+**Returns**: `float` — equivalent amount of `token`.
+
+### get_lp_from_amount
+
+```python
+amount_lp = LPQuote().get_lp_from_amount(pool, token, amount_tkn)
+```
+
+The inverse of `get_amount_from_lp` — convert a token amount into the equivalent LP-token amount.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool to read. |
+| `token` | `ERC20` | The token whose amount you're converting from. |
+| `amount_tkn` | `float` | Token amount to convert. |
+
+**Returns**: `float` — equivalent amount of LP tokens.
+
+## Example
+
+### Setup
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+```
+
+### Spot prices (no fee)
+
+```python
+p_eth = LPQuote().get_price(lp, eth)
+p_tkn = LPQuote().get_price(lp, tkn)
+print(f'1 ETH = {p_eth} TKN')
+print(f'1 TKN = {p_tkn} ETH')
+```
+
+<div class="nb-output">{`1 ETH = 100.0 TKN
+1 TKN = 0.01 ETH`}</div>
+
+### Swap-output forecast (fee-aware)
+
+```python
+amt_eth = LPQuote(include_fee=True).get_amount(lp, eth, 1)
+amt_tkn = LPQuote(include_fee=True).get_amount(lp, tkn, 1)
+print(f'1 ETH would swap to {amt_tkn} TKN')
+print(f'1 TKN would swap to {amt_eth} ETH')
+```
+
+<div class="nb-output">{`1 ETH would swap to 0.009969900600091019 TKN
+1 TKN would swap to 99.60069810399033 ETH`}</div>
+
+### LP-token to underlying
+
+```python
+amt_eth = LPQuote(False).get_amount_from_lp(lp, eth, 1)
+amt_tkn = LPQuote().get_amount_from_lp(lp, eth, 1)
+print(f'1 LP token settles to {amt_eth} ETH (scale-dependent)')
+print(f'1 LP token settles to {amt_tkn} TKN')
+```
+
+<div class="nb-output">{`1 LP token settles to 0.19969005990701796 ETH (scale-dependent)
+1 LP token settles to 19.969005990701795 TKN`}</div>
+
+### Token to LP
+
+```python
+amt_eth_lp = LPQuote(False).get_lp_from_amount(lp, eth, 1)
+amt_tkn_lp = LPQuote(False).get_lp_from_amount(lp, tkn, 1)
+print(f'1 ETH = {amt_eth_lp} LP tokens')
+print(f'1 TKN = {amt_tkn_lp} LP tokens')
+```
+
+<div class="nb-output">{`1 ETH = 5.00876001071831 LP tokens
+1 TKN = 0.05007523748156423 LP tokens`}</div>
+
+## Notes
+
+- **`LPQuote.get_amount` dispatches across V2 and V3.** Direct calls to `pool.get_amount_out` are V2-specific; V3 doesn't expose that method on the exchange object.
+- **Paper value vs. settlement value.** Position-level primitives use linear-share token amounts (paper value); `LPQuote(False).get_amount_from_lp` returns *settlement* value via a synthetic exit swap. Both are valid; pick based on whether you're answering "what would I get if I closed?" (settlement) or "what's my proportional reserve share?" (paper).
+
+## See also
+
+- [`Swap`](/api/primitive/core/swap/) — execution counterpart.
+- [Core API overview](/api/primitive/core/) — index of execution primitives.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — `LPQuote` examples in context.

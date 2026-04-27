@@ -1,0 +1,86 @@
+---
+title: "RemoveLiquidity"
+description: "Double-sided withdrawal. Specify one token amount to receive; the matching amount of the other is calculated from current reserves."
+---
+
+```python
+class defipy.process.RemoveLiquidity()
+```
+
+Double-sided withdrawal from a pool. The caller specifies one token amount to receive; the matching amount of the other is calculated from current reserves. The user's LP tokens are burned proportionally to their withdrawal.
+
+Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+
+## Methods
+
+### apply
+
+```python
+amounts = RemoveLiquidity().apply(pool, token_out, user, amount_out)
+```
+
+Withdraw liquidity from `pool` on behalf of `user`, returning `amount_out` of `token_out`. The matching amount of the other token is computed and also returned to the user.
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool instance to remove liquidity from. |
+| `token_out` | `ERC20` | One side of the withdrawal. The other side is sized automatically. |
+| `user` | `str` | User address (string identifier) whose LP tokens are burned. |
+| `amount_out` | `float` | Amount of `token_out` to receive. |
+
+**Returns**
+
+| Name | Type | Description |
+|---|---|---|
+| `amounts` | `dict` | Dictionary mapping each token symbol to the amount the user received (e.g. `{'ETH': 999.0, 'TKN': 99900.0}`). |
+
+## Example
+
+### Remove via token0 (other side calculated)
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+amounts = RemoveLiquidity().apply(lp, eth, user_nm, 999)
+print(amounts)
+```
+
+<div class="nb-output">{`{'ETH': 999.0, 'TKN': 99900.0}`}</div>
+
+### Remove via token1 (other side calculated)
+
+```python
+RemoveLiquidity().apply(lp, tkn, user_nm, 100)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 999.0, TKN = 99900.0
+Liquidity: 9990.0`}</div>
+
+## Notes
+
+- **The pool's price doesn't change.** Both sides scale by the same proportion; reserve ratio is preserved.
+- **The user must hold enough LP tokens** to cover the implied burn. If they don't, the call raises.
+- For single-sided withdrawals — leaving with only one token — see [`WithdrawSwap`](/api/primitive/core/withdraw-swap/).
+
+## See also
+
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — the inverse operation.
+- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — single-sided variant.
+- [`Join`](/api/primitive/core/join/) — pool initialization.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.

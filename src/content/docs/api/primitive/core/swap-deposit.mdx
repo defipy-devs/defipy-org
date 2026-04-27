@@ -1,0 +1,90 @@
+---
+title: "SwapDeposit"
+description: "Single-sided deposit (zap-in). Provide one token; the primitive computes the optimal swap fraction, swaps, and deposits — leaving zero dust."
+---
+
+```python
+class defipy.process.SwapDeposit()
+```
+
+Single-sided deposit, also called a *zap-in*. The caller arrives with only one token from the pair; the primitive computes the optimal swap fraction α, swaps that fraction for the other token, then performs a balanced two-sided deposit. No leftover dust.
+
+The closed-form V2 zap formula is `f·α²·dx + r·α·(1+f) − r = 0` where `f = 0.997` is the fee multiplier, `r` is the input-token reserve, and `dx` is the deposit amount. The primitive solves the quadratic, executes the swap leg, then deposits the remainder.
+
+Available on **Uniswap V2 and Uniswap V3** only. Balancer and Stableswap support is tracked for a later release.
+
+## Methods
+
+### apply
+
+```python
+amount_out = SwapDeposit().apply(pool, token_in, user, amount_in)
+```
+
+Deposit `amount_in` of `token_in` into `pool` on behalf of `user`, swapping the optimal portion internally so the deposit balances cleanly.
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool instance to deposit into. V2 or V3 only. |
+| `token_in` | `ERC20` | The single token the user is depositing. The other token of the pair is acquired via the internal swap. |
+| `user` | `str` | User address (string identifier) who provides liquidity and receives LP tokens. |
+| `amount_in` | `float` | Amount of `token_in` to zap in. |
+
+**Returns**
+
+| Name | Type | Description |
+|---|---|---|
+| `amount_out` | `float` | Amount of the *other* token that was acquired internally and deposited alongside the remainder of `token_in`. |
+
+## Example
+
+### Zap exact token1 into the pool
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+SwapDeposit().apply(lp, tkn, user_nm, 100)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100100.0
+Liquidity: 10004.991241237401`}</div>
+
+### Zap exact token0 into the pool
+
+```python
+amount_out = SwapDeposit().apply(lp, eth, user_nm, 1)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1001.0, TKN = 100000.0
+Liquidity: 10004.991241237401`}</div>
+
+## Notes
+
+- **The optimal swap fraction is *not* 0.5.** The closed-form solution gives α → 1/(1+f) ≈ 0.50075 in the zero-deposit limit (slight upward bias from the fee asymmetry), and α *decreases* with deposit size. A larger zap moves the price more, so each unit swapped buys less, so the optimal fraction shrinks.
+- For a *non-mutating* projection of what `SwapDeposit` would do — useful for previewing α and the expected LP-token mint — see the [`OptimalDepositSplit`](/api/primitive/agentic/) agentic primitive.
+- The mechanism is: deposit incoming token → perform 50%-side swap → perform 50/50 deposit with the remaining input plus the swap output.
+
+## See also
+
+- [`Join`](/api/primitive/core/join/) — first-time pool initialization.
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — double-sided variant.
+- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — the inverse operation (zap-out).
+- [Tutorials → swap-deposit](/tutorials/uniswapv2/swap-deposit/) — runnable walkthrough including layered LP-token zaps.

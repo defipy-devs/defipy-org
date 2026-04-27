@@ -1,0 +1,49 @@
+---
+title: "Agentic API"
+description: "Read-only analytics primitives — 21 typed primitives across 9 categories that answer specific LP questions and return structured dataclasses."
+---
+
+Agentic Primitives are read-only analytics: stateless objects that answer a specific question about an LP position or pool, and return a structured typed dataclass. They never mutate pool state. Same call shape from a Jupyter notebook or from Claude calling them as tools.
+
+This page is the API reference index. For the conceptual overview and the agentic-loop walkthrough, see [Agentic Primitives](/agentic-primitives/) under Concepts. For the per-class detail pages — including signatures, parameter tables, and runnable examples — see the category links below.
+
+:::caution
+Per-class API pages for each of the 21 agentic primitives are in progress. The links under "Per-category indexes" below currently land on the existing prose-style category pages, which already cover the primitives at the level of "what they answer" and "how to call them." A scikit-learn-style class browser with a strict template (signature → parameters → returns → example) is coming in a follow-up pass.
+:::
+
+## Per-category indexes
+
+| Category | Primitives | What it answers |
+|---|---|---|
+| [Position Analysis](/agentic-primitives/position-analysis/) | `AnalyzePosition`, `AnalyzeBalancerPosition`, `AnalyzeStableswapPosition` | Why is this LP position gaining or losing money? IL decomposition, fee income, net PnL. |
+| [Price Scenarios](/agentic-primitives/price-scenarios/) | `SimulatePriceMove`, `SimulateBalancerPriceMove`, `SimulateStableswapPriceMove` | What happens if the price moves X%? Forward IL, projected position value. |
+| [Pool Health](/agentic-primitives/pool-health/) | `CheckPoolHealth`, `DetectRugSignals`, `DetectFeeAnomaly` | Is this pool healthy? Concentration, activity, fee anomalies, rug signals. |
+| [Risk](/agentic-primitives/risk/) | `CheckTickRangeStatus`, `AssessDepegRisk` | Tick-range proximity (V3); depeg-IL across scenarios (Stableswap). |
+| [Optimization](/agentic-primitives/optimization/) | `EvaluateTickRanges`, `EvaluateRebalance`, `OptimalDepositSplit` | Tick-range candidate evaluation, rebalance cost-vs-benefit, V2 zap-in α. |
+| [Comparison](/agentic-primitives/comparison/) | `CompareFeeTiers`, `CompareProtocols` | Fee-tier comparison (V3); cross-protocol comparison (V2/V3/Balancer/Stableswap). |
+| [Execution](/agentic-primitives/execution/) | `CalculateSlippage`, `DetectMEV` | Trade slippage decomposition; theoretical-vs-actual comparison for MEV detection. |
+| [Portfolio](/agentic-primitives/portfolio/) | `AggregatePortfolio` | Multi-position aggregation across protocols, with worst-first PnL ranking. |
+| [Break-Even](/agentic-primitives/break-even/) | `FindBreakEvenPrice`, `FindBreakEvenTime` | At what price / how long until fees break even with IL? (V2 + V3.) |
+
+## The agentic primitive contract
+
+Every agentic primitive follows the same contract:
+
+```python
+result = ClassName().apply(lp, ...args)
+```
+
+- **Stateless construction.** `ClassName()` takes no parameters.
+- **`.apply()` does the work.** The pool object and any analysis-specific arguments (token amounts, scenario parameters, ranges) are passed at call time.
+- **Read-only.** Pool state is never modified. Run as many times as you like at the same pool snapshot — the result is deterministic.
+- **Returns a typed dataclass.** Every primitive defines its own result dataclass — `PositionAnalysis`, `PoolHealth`, `DepegRiskAssessment`, etc. — with named fields a caller can destructure, serialize, or render.
+
+For the dataclass definitions themselves see [Result Dataclasses](/agentic-result-dataclasses/). For tool schemas (MCP) see [Tool Schemas](/agentic-tool-schemas/).
+
+## See also
+
+- [Agentic Primitives](/agentic-primitives/) — concepts and overview
+- [The Primitive Contract](/primitive-contract/) — design rationale
+- [Tool Schemas](/agentic-tool-schemas/) — MCP-format schemas for LLM tool-use
+- [Twin Reference](/agentic-twin-reference/) — the `defipy.twin` State Twin API
+- [Tools Reference](/agentic-tools-reference/) — the `defipy.tools` schema-emission API

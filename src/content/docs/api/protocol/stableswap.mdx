@@ -1,0 +1,61 @@
+---
+title: "Stableswap API"
+description: "Protocol-specific class reference for Curve-style Stableswap: factory, exchange, math pool, and IL with depeg-risk math from stableswappy."
+---
+
+Protocol-specific classes for Curve-style Stableswap — the amplification-coefficient AMM optimized for stablecoin pairs. These live in [`stableswappy`](https://github.com/defipy-devs/stableswappy) and are imported into DeFiPy's namespace at install time.
+
+When working through DeFiPy's [Core API](/api/primitive/core/), you typically don't touch these classes directly — `Join`, `Swap`, `AddLiquidity`, `RemoveLiquidity` dispatch to them. You'll reach for them when constructing a custom-A pool, evaluating depeg risk, or extending the library.
+
+:::caution
+Per-class detail pages with full signature / parameter / method documentation are in progress. Today's page is an inventory of the public API surface; for working examples see the linked tutorials.
+:::
+
+## Public classes
+
+### Factory and exchange
+
+| Class | Module | Purpose |
+|---|---|---|
+| `StableswapFactory` | `stableswappy.cpt.factory` | Deploys stableswap pools. |
+| `StableswapExchange` | `stableswappy.cpt.exchg` | The pool — token reserves, amplification coefficient `A`, fee config, pool-share supply. |
+| `StableswapExchangeData` | `stableswappy.cpt.exchg` | Configuration: token list, A, fee, address. |
+| `StableswapVault` | `stableswappy.cpt.vault` | Vault holding pool's underlying tokens. Exchange tokens via `vault.get_token(name)`. |
+
+### Math
+
+| Module / class | Purpose |
+|---|---|
+| `StableswapPoolMath` | The integer-math state solvers — `get_y`, `get_D`, `_dydx`. Newton iterations; can fail to converge at extreme balance ratios (no iteration cap in the current release). |
+| `stableswappy.analytics.risk.StableswapImpLoss` | 2-asset stableswap IL math with `DepegUnreachableError` semantics. Used by [`AnalyzeStableswapPosition`](/api/primitive/agentic/), [`SimulateStableswapPriceMove`](/api/primitive/agentic/), and [`AssessDepegRisk`](/api/primitive/agentic/). |
+
+## Conventions
+
+- **Decimal-units for balances.** `math_pool.balances[i]` is in each token's native decimal units (USDC at 10⁶, DAI at 10¹⁸). Convert to human via `dec2amt(balance, token_decimals)`.
+- **The `rates` table is internal.** Used to build `xp` (all tokens at 10¹⁸ scale for invariant math). Don't pass through it twice when converting balance → human; that's a known footgun.
+- **`dydx(0, 1, use_fee=False)` returns 1.0 exactly at peg.** Algebraically, when `xi == xj` the formula collapses to 1.0 — safe `abs(dydx - 1.0) < 1e-12` short-circuit for at-peg detection.
+- **Depeg unreachability is real.** At high A, many depeg targets require `|ε| > 1` and have no physical solution. Primitives raise `DepegUnreachableError` and analytics dataclasses surface `Optional[float]` fields that are `None` for unreachable scenarios.
+- **2-asset only in v1.** N-asset baskets work in Stableswap the protocol but DeFiPy's analytics math is 2-asset for now.
+
+## Construction example
+
+```python
+from defipy import *
+
+usdc = ERC20("USDC", "0xa0b8")
+dai = ERC20("DAI", "0x6b17")
+
+# 2-asset USDC/DAI stableswap at A=10
+factory = StableswapFactory("USDC-DAI factory", "0x2")
+# ...exchange data construction with A, fee, decimals...
+# lp = factory.deploy(exchg_data)
+```
+
+For a complete construction walkthrough see the [Stableswap abstract-interface tutorial](/tutorials/stableswap/abstract-stableswap-test/).
+
+## See also
+
+- [Core API](/api/primitive/core/) — execution dispatchers.
+- [Tutorials → Stableswap](/tutorials/stableswap/abstract-stableswap-test/) — runnable walkthrough.
+- [Stableswap Math](/math/stableswap-math/) — amplification, ε ↔ δ, and depeg-IL derivations.
+- [`stableswappy` on GitHub](https://github.com/defipy-devs/stableswappy) — protocol library source.

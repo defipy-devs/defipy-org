@@ -1,6 +1,6 @@
 ---
 title: "What's new in v2.0"
-description: "From desktop tool to industrial infrastructure. v1 was built for the research analyst — a library you imported into a notebook to answer questions about a…"
+description: "From desktop tool to industrial infrastructure. v1 was built for the research analyst — a library you imported into a notebook. v2 is built for the agentic era."
 ---
 
 **From desktop tool to industrial infrastructure.** v1 was built for the research analyst — a library you imported into a notebook to answer questions about a pool. v2 is built for the agentic era — the same primitives now ship as MCP tools, callable by autonomous systems at production scale. The math didn't change. The surface around it did.
@@ -19,19 +19,19 @@ The 21 stateless, typed analytics primitives are the core of v2 — all present 
 - **Portfolio** — aggregate multi-position portfolios with numeraire enforcement
 - **Break-Even** — find the price or holding period where fees compensate IL
 
-10 of the 21 are curated as MCP tools for LLM consumption; all 21 are importable, documented, and tested. See the XREFSENTINELAgentic Primitives Overview \<agentic_categories\>XREFEND for the full availability grid, primitive descriptions, and executable notebook examples for every category.
+10 of the 21 are curated as MCP tools for LLM consumption; all 21 are importable, documented, and tested. See the [Agentic Primitives Overview](/agentic-primitives/) for the full availability grid, primitive descriptions, and executable notebook examples for every category.
 
 **defipy.tools**
 
-Self-describing schemas for the 10 curated leaf primitives in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) format. `get_schemas("mcp")` returns the schema list; `TOOL_REGISTRY` exposes the underlying `ToolSpec` entries for programmatic use. Anthropic tool-use and OpenAI function-calling formats are deferred to v2.1 — both are derivable from MCP schemas with small wrappers. See [tool_schemas](/agentic-tool-schemas/) for the full module reference.
+Self-describing schemas for the 10 curated leaf primitives in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) format. `get_schemas("mcp")` returns the schema list; `TOOL_REGISTRY` exposes the underlying `ToolSpec` entries for programmatic use. Anthropic tool-use and OpenAI function-calling formats are deferred to v2.1 — both are derivable from MCP schemas with small wrappers. See [Tool Schemas](/agentic-tool-schemas/) for the full module reference.
 
 **defipy.twin**
 
-The State Twin abstraction. `StateTwinProvider` defines the `snapshot(pool_id) → PoolSnapshot` contract. `MockProvider` ships four canonical synthetic recipes (`eth_dai_v2`, `eth_dai_v3`, `eth_dai_balancer_50_50`, `usdc_dai_stableswap_A10`). `LiveProvider` ships as a stub with a stable constructor — functional implementation lands in v2.1. See [twin_concept](/twin-concept/) for the full treatment.
+The State Twin abstraction. `StateTwinProvider` defines the `snapshot(pool_id) → PoolSnapshot` contract. `MockProvider` ships four canonical synthetic recipes (`eth_dai_v2`, `eth_dai_v3`, `eth_dai_balancer_50_50`, `usdc_dai_stableswap_A10`). `LiveProvider` ships as a stub with a stable constructor — functional implementation lands in v2.1. See [Twin Concept](/twin-concept/) for the full treatment.
 
 **MCP server demo**
 
-A reference stdio-transport server at `python/mcp/defipy_mcp_server.py` exposes DeFiPy's 10 curated tools to Claude Desktop, Claude Code, or any MCP client. Per-call receipts log as single-line JSON to stderr. See [binding_to_claude](/binding-to-claude/) for setup and [mcp_demo](/mcp-demo/) for a verified-live walkthrough.
+A reference stdio-transport server at `python/mcp/defipy_mcp_server.py` exposes DeFiPy's 10 curated tools to Claude Desktop, Claude Code, or any MCP client. Per-call receipts log as single-line JSON to stderr. See [Binding to Claude](/binding-to-claude/) for setup and [MCP Demo](/mcp-demo/) for a verified-live walkthrough.
 
 **Test coverage**
 
@@ -54,4 +54,4 @@ All 21 primitives ship with identical behavior to v1.2.0. No breaking changes to
 - Balancer + Stableswap extensions to `FindBreakEvenPrice`, `FindBreakEvenTime`, `CalculateSlippage`
 - `AssessLiquidityDepth` (V3 tick-walking) and `DiscoverPools`
 
-See [roadmap](/roadmap/) for the full v2.1+ timeline.
+See the [Roadmap](/roadmap/) for the full v2.1+ timeline.

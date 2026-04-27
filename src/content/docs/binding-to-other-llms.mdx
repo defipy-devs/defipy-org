@@ -1,6 +1,6 @@
 ---
 title: "Binding to Other LLMs"
-description: "v2.0 ships MCP schemas only. Anthropic tool-use and OpenAI function-calling adapters are deferred to v2.1 and will be derivable from the shipped MCP schemas…"
+description: "v2.0 ships MCP schemas only. Anthropic tool-use and OpenAI function-calling adapters are deferred to v2.1, derivable from the shipped MCP schemas."
 ---
 
 v2.0 ships MCP schemas only. Anthropic tool-use and OpenAI function-calling adapters are deferred to v2.1 and will be derivable from the shipped MCP schemas with small wrappers.
@@ -18,7 +18,7 @@ A developer who needs an Anthropic or OpenAI schema today can derive one from th
 **Workarounds for today**
 
 1.  **Roll a derivation script.** Load the MCP schemas via `get_schemas("mcp")`, transform the envelope. The `input_schema` field moves to `input_schema` (Anthropic) or `parameters` (OpenAI); the `name` and `description` fields transfer unchanged.
-2.  **Wait for v2.1.** Timeline tracked in [roadmap](/roadmap/).
+2.  **Wait for v2.1.** Timeline tracked in the [Roadmap](/roadmap/).
 
 :::note
 The primitives themselves are LLM-agnostic. Whatever format wraps them, the `.apply()` call is the same code path. That's the architectural commitment — the primitive is the tool, regardless of which vendor's tool-use format is in play.

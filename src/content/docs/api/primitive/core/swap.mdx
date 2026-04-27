@@ -1,0 +1,94 @@
+---
+title: "Swap"
+description: "Swap exact `token_in` for `token_out` on an initialized pool. Cross-protocol: dispatches to V2, V3, Balancer, or Stableswap."
+---
+
+```python
+class defipy.process.Swap()
+```
+
+Swap exact `token_in` for `token_out` on an initialized pool. The output amount is determined by the pool's invariant — constant product for V2, concentrated-liquidity ticks for V3, weighted geometric mean for Balancer, the amplification-adjusted curve for Stableswap.
+
+Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+
+## Methods
+
+### apply
+
+```python
+out = Swap().apply(pool, token_in, user, amount_in)
+```
+
+Execute the swap. Pool reserves update; the user's balance of `token_out` increases by the returned amount.
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool instance to swap on. |
+| `token_in` | `ERC20` | The token being swapped *in*. The other side of the pair is the token being swapped out. |
+| `user` | `str` | User address (string identifier) executing the swap. |
+| `amount_in` | `float` | Amount of `token_in` to swap. |
+
+**Returns**
+
+| Name | Type | Description |
+|---|---|---|
+| `out` | `float` | Amount of `token_out` the user receives, net of pool fees. |
+
+## Example
+
+### Swap token1 for token0
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+
+out = Swap().apply(lp, tkn, user_nm, 1000)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0
+
+Exchange ETH-TKN (LP)
+Reserves: ETH = 990.1284196560293, TKN = 101000.0
+Liquidity: 10000.0`}</div>
+
+### Swap token0 for token1
+
+```python
+out = Swap().apply(lp, eth, user_nm, 10)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 99012.84196560294
+Liquidity: 10000.0`}</div>
+
+## Notes
+
+- **Fee handling is protocol-specific.** V2 hard-codes 30 bps inside `get_amount_out`. V3 reads the fee tier from `pool.fee` (in pips: 100 = 0.01%, 500 = 0.05%, 3000 = 0.3%, 10000 = 1%). Balancer's `SWAP_FEE` is 0.25%. Stableswap fees are configured per-pool.
+- **Slippage is not capped by `Swap` itself.** If you need slippage protection, compute the expected output via [`LPQuote`](/api/primitive/core/lp-quote/) first and verify the realized output against your tolerance after the call.
+- **`Swap` is symmetric.** Reversing `token_in` reverses the direction; pool state behaves consistently.
+- **Trading LP tokens.** Some primitives accept an LP-token instance for `token_in` when the pool is layered (an LP token of one pool acting as a token in another). The example tutorial covers this case.
+
+## See also
+
+- [`LPQuote`](/api/primitive/core/lp-quote/) — non-mutating quote of a swap before executing it.
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided deposit; internally uses a swap to balance the deposit.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough including LP-token swap cases.

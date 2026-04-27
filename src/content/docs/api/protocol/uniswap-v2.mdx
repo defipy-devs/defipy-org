@@ -1,0 +1,64 @@
+---
+title: "Uniswap V2 API"
+description: "Protocol-specific class reference for Uniswap V2: factory, exchange, and supporting types from uniswappy."
+---
+
+Protocol-specific classes for Uniswap V2 — the constant-product (`x · y = k`) AMM. These live in [`uniswappy`](https://github.com/defipy-devs/uniswappy) and are imported into DeFiPy's namespace at install time.
+
+When working through DeFiPy's [Core API](/api/primitive/core/), you typically don't touch these classes directly — `Join`, `Swap`, `AddLiquidity`, etc., dispatch to them under the hood. You'll reach for them when you need to construct a pool from scratch (the `factory.deploy(exchg_data)` pattern), inspect protocol-specific state, or extend the library.
+
+:::caution
+Per-class detail pages — `UniswapFactory`, `UniswapExchange`, `UniswapExchangeData` with full signature / parameter / method documentation — are in progress. Today's page is an inventory of the public API surface; for working examples see the linked tutorials.
+:::
+
+## Public classes
+
+### Factory and exchange
+
+| Class | Module | Purpose |
+|---|---|---|
+| `UniswapFactory` | `uniswappy.cpt.factory` | Deploys new pools. The `Join` operation runs against pool instances returned by `factory.deploy(exchg_data)`. |
+| `UniswapExchange` | `uniswappy.cpt.exchg` | The pool itself — holds reserves, fee accumulators, LP-token supply, and the per-user LP-balance ledger. |
+| `UniswapExchangeData` | `uniswappy.cpt.exchg` | Configuration object passed to the factory: token pair, symbol, address. |
+
+### Tokens
+
+| Class | Module | Purpose |
+|---|---|---|
+| `ERC20` | `uniswappy.erc` | Test token type used throughout DeFiPy. Constructor takes a name and address; instances are passed by reference to swap/deposit ops. |
+| `LPERC20` | `uniswappy.erc` | LP-token type. Returned by `factory.deploy`; can itself be used as a base token in a layered pool. |
+
+### Math and tools
+
+| Module | Purpose |
+|---|---|
+| `uniswappy.cpt.index` | `RebaseIndexToken`, `SettlementLPToken` — the inverse-token primitives DeFiPy uses for paper-vs-settlement value conversion. |
+| `uniswappy.cpt.quote` | `LPQuote`, `IndexTokenQuote` — fee-aware and fee-free quoting. The DeFiPy [`LPQuote`](/api/primitive/core/lp-quote/) page documents the full surface. |
+| `uniswappy.analytics.risk` | `UniswapImpLoss` — V2 IL math used by [`AnalyzePosition`](/api/primitive/agentic/) and [`SimulatePriceMove`](/api/primitive/agentic/). |
+
+## Construction example
+
+```python
+from defipy import *
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol = "LP", address = "0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+# lp is a UniswapExchange instance, ready for Join().apply(...)
+```
+
+## Notes
+
+- **The fee is hard-coded at 30 bps.** `UniswapExchange` has no `.fee` attribute — the multiplier `997/1000` is baked into `get_amount_out0/1`. This is correct for canonical V2; non-30-bps V2 forks would need a different exchange class.
+- **First-mint sentinel.** V2's `MINIMUM_LIQUIDITY` is burned to address `"0"` on first `Join`. Filter out the `"0"` entry when iterating LP holders.
+- **`token0` / `token1` are bare strings.** Not full ERC20 objects. The full ERC20 instance lives at `factory.token_from_exchange[lp.name][lp.token0]`.
+
+## See also
+
+- [Core API](/api/primitive/core/) — the cross-protocol execution dispatchers built on top of these classes.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.
+- [Uniswap V2 Math](/math/univ2-math/) — derivations and hand-worked examples.
+- [`uniswappy` on GitHub](https://github.com/defipy-devs/uniswappy) — protocol library source.

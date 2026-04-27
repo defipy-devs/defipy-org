@@ -1,0 +1,62 @@
+---
+title: "Uniswap V3 API"
+description: "Protocol-specific class reference for Uniswap V3: factory, concentrated-liquidity exchange, tick math, and helpers from uniswappy."
+---
+
+Protocol-specific classes for Uniswap V3 — the concentrated-liquidity AMM with sqrt-price arithmetic and tick-spaced positions. These live in [`uniswappy`](https://github.com/defipy-devs/uniswappy) and are imported into DeFiPy's namespace at install time.
+
+When working through DeFiPy's [Core API](/api/primitive/core/), you typically don't touch these classes directly — `Join`, `Swap`, etc., dispatch to them. You'll reach for them when constructing a V3 pool from scratch with a specific tick range and fee tier, when inspecting tick-level state, or when extending the library.
+
+:::caution
+Per-class detail pages with full signature / parameter / method documentation are in progress. Today's page is an inventory of the public API surface; for working examples see the linked tutorials.
+:::
+
+## Public classes
+
+### Factory and exchange
+
+| Class | Module | Purpose |
+|---|---|---|
+| `UniswapV3Factory` | `uniswappy.cpt.factory` | Deploys V3 pools. `factory.deploy(exchg_data)` returns a fresh V3 exchange. |
+| `UniswapV3Exchange` | `uniswappy.cpt.exchg` | The V3 pool — sqrt-price, tick bitmap, fee accumulators (`feeGrowthGlobal0X128` / `feeGrowthGlobal1X128`), and per-position state. |
+| `UniswapV3ExchangeData` | `uniswappy.cpt.exchg` | Configuration: token pair, fee tier (in pips), tick spacing, address. |
+
+### Tick math and helpers
+
+| Module | Purpose |
+|---|---|
+| `uniswappy.utils.tools.v3.UniV3Utils` | Core tick math ported from the on-chain contract — `getMinTick`, `getMaxTick`, sqrt-price/tick conversion. |
+| `uniswappy.utils.tools.v3.UniV3Helper` | Higher-level helpers — `quote()` for non-mutating swap projection (note: hard-codes 30 bps; see backlog). |
+| `uniswappy.utils.tools.v3.TickMath` | Direct port of the on-chain `TickMath` library; financial-grade precision. |
+
+### Math and analytics
+
+| Module | Purpose |
+|---|---|
+| `uniswappy.analytics.risk` | `UniswapImpLoss` — handles V3 IL math via concentrated-range adjustments. |
+
+## Fee-tier conventions
+
+V3 pools store the fee tier on `pool.fee` as **pips** (millionths):
+
+| Tier | `pool.fee` | Common use |
+|---|---|---|
+| 0.01% | 100 | Stable-stable pairs |
+| 0.05% | 500 | Stablecoin / blue-chip |
+| 0.3% | 3000 | Standard pairs |
+| 1% | 10000 | Exotic / illiquid |
+
+To convert to a multiplier: `1 - pool.fee / 1_000_000`.
+
+## Notes
+
+- **`collected_fee0` / `collected_fee1` update synchronously during `Swap().apply()`.** Reading `CheckPoolHealth` after a swap reflects the updated values immediately.
+- **No per-swap fee history.** V3 has the running accumulator (`feeGrowthGlobal*X128`) but no `fee0_arr` / `fee1_arr` — rate-window metrics that V2 supports return `None` on V3.
+- **`UniV3Helper.quote` hard-codes the 30-bps fee** regardless of `pool.fee`. For 0.01%, 0.05%, or 1% pools the helper diverges from real-pool output. Tracked in the cleanup backlog; affects `LPQuote(include_fee=True)` reads on non-30-bps V3 pools.
+
+## See also
+
+- [Core API](/api/primitive/core/) — execution dispatchers.
+- [Tutorials → Uniswap V3](/tutorials/uniswapv3/uniswap-v3/) — runnable end-to-end walkthrough.
+- [Uniswap V3 Math](/math/univ3-math/) — sqrt-price, ticks, and concentrated-liquidity derivations.
+- [`uniswappy` on GitHub](https://github.com/defipy-devs/uniswappy) — protocol library source.

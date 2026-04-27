@@ -1,0 +1,40 @@
+---
+title: "Core API"
+description: "Cross-protocol execution dispatchers — Join, Swap, AddLiquidity, RemoveLiquidity, SwapDeposit, WithdrawSwap, LPQuote — that mutate pool state across Uniswap V2, V3, Balancer, and Stableswap."
+---
+
+Core Primitives are the cross-protocol execution dispatchers. They mutate pool state — initializing pools, swapping, adding and removing liquidity, and quoting — across Uniswap V2, V3, Balancer, and Stableswap through a single abstract interface.
+
+For the conceptual overview and the dispatcher-design rationale, see [Core Primitives](/core-primitives/) under Concepts. This page is the API reference: every public class with its signature, parameters, and a runnable example.
+
+## Class index
+
+| Class | Purpose | V2 | V3 | Balancer | Stableswap |
+|---|---|:---:|:---:|:---:|:---:|
+| [`Join`](/api/primitive/core/join/) | Initialize pool with both tokens | ✅ | ✅ | ✅ | ✅ |
+| [`Swap`](/api/primitive/core/swap/) | Swap exact `token_in` for `token_out` | ✅ | ✅ | ✅ | ✅ |
+| [`AddLiquidity`](/api/primitive/core/add-liquidity/) | Double-sided deposit | ✅ | ✅ | ✅ | ✅ |
+| [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) | Double-sided withdrawal | ✅ | ✅ | ✅ | ✅ |
+| [`SwapDeposit`](/api/primitive/core/swap-deposit/) | Single-sided deposit (zap-in) | ✅ | ✅ | ❌ | ❌ |
+| [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) | Single-sided withdrawal (zap-out) | ✅ | ✅ | ❌ | ❌ |
+| [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, LP↔token) | ✅ | ✅ | 🔜 | 🔜 |
+
+## Common contract
+
+Every Core primitive follows the DeFiPy contract:
+
+```python
+result = ClassName().apply(lp, ...args)
+```
+
+- **Stateless construction.** `ClassName()` takes no parameters.
+- **`.apply()` does the work.** All operation arguments — pool, user, amounts, tokens — are passed to `.apply()`, not to the constructor.
+- **Mutates the pool.** Unlike Agentic primitives (read-only), Core primitives change `lp` state: reserves, LP-token supply, fee accumulators, etc.
+- **Returns operation-specific values.** Some return scalars (a swap output amount), some return structured outputs, some return `None` and rely on pool-state inspection.
+
+## See also
+
+- [Core Primitives](/core-primitives/) — narrative / conceptual overview
+- [Abstract Uniswap](/abstract-uniswap/) — the legacy abstract-interface page
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — end-to-end runnable walkthrough of every Core primitive
+- [Protocol API](/api/protocol/uniswap-v2/) — protocol-specific factories and exchange classes that Core primitives dispatch to

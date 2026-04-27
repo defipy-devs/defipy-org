@@ -15,7 +15,7 @@ The `defipy.twin` module provides the State Twin abstraction — a protocol-agno
 
 **Usage**
 
-``` python
+```python
 from defipy.twin import MockProvider, StateTwinBuilder
 
 provider = MockProvider()
@@ -36,4 +36,4 @@ result = CheckPoolHealth().apply(lp)
 | `eth_dai_balancer_50_50` | Balancer 2-asset | 1000 ETH / 100000 DAI, 50/50 weights |
 | `usdc_dai_stableswap_A10` | Stableswap 2-asset | 100000 USDC / 100000 DAI, A=10 |
 
-For the full conceptual treatment — including custom providers, the LiveProvider stub, and the snapshot → builder → primitive pipeline — see [twin_concept](/twin-concept/).
+For the full conceptual treatment — including custom providers, the LiveProvider stub, and the snapshot → builder → primitive pipeline — see the [Twin Concept](/twin-concept/).

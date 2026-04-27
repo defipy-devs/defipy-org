@@ -1,11 +1,11 @@
 ---
 title: "Agentic Primitives"
-description: "Agentic Primitives are stateless, typed analytics functions that answer questions about DeFi positions, pools, and risk. They follow a three-line contract:…"
+description: "21 stateless, typed analytics primitives that answer questions about DeFi positions, pools, and risk. Composable, MCP-ready, and identical from a notebook or an LLM."
 ---
 
-Agentic Primitives are stateless, typed analytics functions that answer questions about DeFi positions, pools, and risk. They follow a three-line contract: stateless construction, computation at `.apply()`, typed dataclass return. Every primitive works identically whether called from a notebook or from an LLM via the MCP server. See [agentic_primitive_contract](/primitive-contract/) for the contract invariants.
+Agentic Primitives are stateless, typed analytics functions that answer questions about DeFi positions, pools, and risk. They follow a three-line contract: stateless construction, computation at `.apply()`, typed dataclass return. Every primitive works identically whether called from a notebook or from an LLM via the MCP server. See [The Primitive Contract](/primitive-contract/) for the contract invariants.
 
-These primitives **read pool state** — they are analytics operations (position decomposition, risk assessment, price scenarios). For execution operations that mutate pool state (mint, burn, swap, zap), see [core_primitives_index](/core-primitives/) under Core Primitives.
+These primitives **read pool state** — they are analytics operations (position decomposition, risk assessment, price scenarios). For execution operations that mutate pool state (mint, burn, swap, zap), see [Core Primitives](/core-primitives/).
 
 **Availability**
 
@@ -35,27 +35,29 @@ These primitives **read pool state** — they are analytics operations (position
 
 **Primitive descriptions**
 
-- `AnalyzePosition()` — Decompose a V2/V3 LP position into impermanent loss, fee income, net PnL, and diagnosis.
-- `AnalyzeBalancerPosition()` — Position decomposition for Balancer weighted pools, accounting for asymmetric token weights.
-- `AnalyzeStableswapPosition()` — Position decomposition for Stableswap pools, with alpha/unreachable-alpha regime handling.
-- `SimulatePriceMove()` — Project a V2/V3 position's value at a hypothetical price change.
-- `SimulateBalancerPriceMove()` — Project a Balancer position's value at a hypothetical price change, respecting pool weights.
-- `SimulateStableswapPriceMove()` — Project a Stableswap position's value at a hypothetical price change, respecting amplification.
-- `CheckPoolHealth()` — Snapshot pool-level health metrics: TVL, reserves, LP concentration, fee activity, spot price.
-- `DetectRugSignals()` — Threshold-based rug-pull signal detector. Composes over `CheckPoolHealth`.
-- `DetectFeeAnomaly()` — Detect unusual fee patterns in V2 pools.
-- `CheckTickRangeStatus()` — V3-only: is the position's tick range still active?
-- `AssessDepegRisk()` — Stableswap-only: quantify exposure to a stablecoin depeg using the ε ↔ δ relationship.
-- `OptimalDepositSplit()` — Compute the optimal token split for a single-sided V2 deposit.
-- `EvaluateRebalance()` — Evaluate whether rebalancing a V2 position is worth the cost.
-- `EvaluateTickRanges()` — V3-only: compare candidate tick ranges for a position.
-- `CompareFeeTiers()` — V3-only: compare fee tier options for a position.
-- `CompareProtocols()` — Cross-protocol comparison of the same token pair across V2, V3, Balancer, and Stableswap.
-- `CalculateSlippage()` — Compute slippage and price impact for a proposed swap on a V2/V3 pool.
-- `DetectMEV()` — Detect potential MEV exposure for a swap on a V2/V3 pool.
-- `AggregatePortfolio()` — Aggregate N LP positions into a single portfolio-level view. Dispatches to per-protocol analyzers.
-- `FindBreakEvenPrice()` — Find the price at which IL equals fee income for a V2/V3 position.
-- `FindBreakEvenTime()` — Find the holding period at which fee income compensates IL for a V2/V3 position.
+Each primitive links to the category page where it's documented in detail with runnable examples and result-dataclass fields. Per-class API pages are in progress.
+
+- [`AnalyzePosition()`](/agentic-primitives/position-analysis/) — Decompose a V2/V3 LP position into impermanent loss, fee income, net PnL, and diagnosis.
+- [`AnalyzeBalancerPosition()`](/agentic-primitives/position-analysis/) — Position decomposition for Balancer weighted pools, accounting for asymmetric token weights.
+- [`AnalyzeStableswapPosition()`](/agentic-primitives/position-analysis/) — Position decomposition for Stableswap pools, with alpha/unreachable-alpha regime handling.
+- [`SimulatePriceMove()`](/agentic-primitives/price-scenarios/) — Project a V2/V3 position's value at a hypothetical price change.
+- [`SimulateBalancerPriceMove()`](/agentic-primitives/price-scenarios/) — Project a Balancer position's value at a hypothetical price change, respecting pool weights.
+- [`SimulateStableswapPriceMove()`](/agentic-primitives/price-scenarios/) — Project a Stableswap position's value at a hypothetical price change, respecting amplification.
+- [`CheckPoolHealth()`](/agentic-primitives/pool-health/) — Snapshot pool-level health metrics: TVL, reserves, LP concentration, fee activity, spot price.
+- [`DetectRugSignals()`](/agentic-primitives/pool-health/) — Threshold-based rug-pull signal detector. Composes over `CheckPoolHealth`.
+- [`DetectFeeAnomaly()`](/agentic-primitives/pool-health/) — Detect unusual fee patterns in V2 pools.
+- [`CheckTickRangeStatus()`](/agentic-primitives/risk/) — V3-only: is the position's tick range still active?
+- [`AssessDepegRisk()`](/agentic-primitives/risk/) — Stableswap-only: quantify exposure to a stablecoin depeg using the ε ↔ δ relationship.
+- [`OptimalDepositSplit()`](/agentic-primitives/optimization/) — Compute the optimal token split for a single-sided V2 deposit.
+- [`EvaluateRebalance()`](/agentic-primitives/optimization/) — Evaluate whether rebalancing a V2 position is worth the cost.
+- [`EvaluateTickRanges()`](/agentic-primitives/optimization/) — V3-only: compare candidate tick ranges for a position.
+- [`CompareFeeTiers()`](/agentic-primitives/comparison/) — V3-only: compare fee tier options for a position.
+- [`CompareProtocols()`](/agentic-primitives/comparison/) — Cross-protocol comparison of the same token pair across V2, V3, Balancer, and Stableswap.
+- [`CalculateSlippage()`](/agentic-primitives/execution/) — Compute slippage and price impact for a proposed swap on a V2/V3 pool.
+- [`DetectMEV()`](/agentic-primitives/execution/) — Detect potential MEV exposure for a swap on a V2/V3 pool.
+- [`AggregatePortfolio()`](/agentic-primitives/portfolio/) — Aggregate N LP positions into a single portfolio-level view. Dispatches to per-protocol analyzers.
+- [`FindBreakEvenPrice()`](/agentic-primitives/break-even/) — Find the price at which IL equals fee income for a V2/V3 position.
+- [`FindBreakEvenTime()`](/agentic-primitives/break-even/) — Find the holding period at which fee income compensates IL for a V2/V3 position.
 
 **Relationship to other sections**
 
@@ -64,18 +66,18 @@ Core Primitives and Agentic Primitives are both abstract — they dispatch acros
 - **Core Primitives** mutate pool state (execution: mint, burn, swap, zap)
 - **Agentic Primitives** read pool state and return analytics (position analysis, risk, scenarios)
 
-For the Solidity-derived protocol-specific classes underneath both layers, see [primitive_uniswapv2](/primitive-uniswapv2/) and siblings under Protocol Classes.
+For the protocol-specific exchange classes underneath both layers, see [Protocol API → Uniswap V2](/api/protocol/uniswap-v2/) and siblings.
 
-<div class="toctree" maxdepth="2">
+**Categories**
 
-notebooks/position_analysis.ipynb
-notebooks/price_scenarios.ipynb
-notebooks/pool_health.ipynb
-notebooks/risk.ipynb
-notebooks/optimization.ipynb
-notebooks/comparison.ipynb
-notebooks/execution.ipynb
-notebooks/portfolio.ipynb
-notebooks/break_even.ipynb
+Each category has its own page with executable examples and result-dataclass details:
 
-</div>
+- [Position Analysis](/agentic-primitives/position-analysis/)
+- [Price Scenarios](/agentic-primitives/price-scenarios/)
+- [Pool Health](/agentic-primitives/pool-health/)
+- [Risk](/agentic-primitives/risk/)
+- [Optimization](/agentic-primitives/optimization/)
+- [Comparison](/agentic-primitives/comparison/)
+- [Execution](/agentic-primitives/execution/)
+- [Portfolio](/agentic-primitives/portfolio/)
+- [Break-Even](/agentic-primitives/break-even/)

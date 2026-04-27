@@ -1,0 +1,71 @@
+---
+title: "Join"
+description: "Initialize a pool with both tokens. The first liquidity-providing operation a pool sees — sets initial reserves and mints LP tokens to the user."
+---
+
+```python
+class defipy.process.Join()
+```
+
+Initialize a pool with both tokens. `Join` is the first liquidity-providing operation a pool sees: it sets the initial reserves and mints the initial LP-token supply to the user. After `Join`, the pool has a price and trades can happen.
+
+Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+
+## Methods
+
+### apply
+
+```python
+Join().apply(pool, user, amount0, amount1)
+```
+
+Add the initial token-0 and token-1 amounts to `pool` on behalf of `user`. The ratio of `amount0` to `amount1` sets the initial price.
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool instance, typically returned by a `Factory.deploy(...)` call. |
+| `user` | `str` | User address (string identifier) credited with the initial LP tokens. |
+| `amount0` | `float` | Amount of `pool.token0` to deposit. |
+| `amount1` | `float` | Amount of `pool.token1` to deposit. |
+
+**Returns**
+
+`None`. The pool is mutated in place — reserves are set, LP-token supply is minted and credited to `user`. Inspect `pool.summary()` or `pool.get_liquidity()` after the call.
+
+## Example
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1000.0, TKN = 100000.0
+Liquidity: 10000.0`}</div>
+
+## Notes
+
+- The implied price is `amount1 / amount0`. In the example above, the pool starts at 100 TKN per ETH.
+- Initial liquidity is `√(amount0 · amount1)` for V2 and Balancer-style geometric-mean pools. For V3 and Stableswap the formula differs but the principle is the same: the first deposit sets a baseline.
+- Uniswap V2 burns a small `MINIMUM_LIQUIDITY` to a sentinel address (`"0"`) on first mint to prevent share-price manipulation. Treat that sentinel as out-of-band when counting LPs.
+
+## See also
+
+- [`Swap`](/api/primitive/core/swap/) — once a pool is initialized, `Swap` exchanges one token for the other.
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — for adding liquidity to an *already-initialized* pool.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.

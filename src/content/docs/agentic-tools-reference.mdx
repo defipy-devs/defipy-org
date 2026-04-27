@@ -1,9 +1,9 @@
 ---
 title: "defipy.tools"
-description: "defipy.tools turns analytics primitives into MCP tool definitions. It emits JSON schemas, maintains the registry of what's exposed, and nothing else.…"
+description: "defipy.tools turns analytics primitives into MCP tool definitions. It emits JSON schemas, maintains the registry of what's exposed, and nothing else."
 ---
 
-`defipy.tools` turns analytics primitives into MCP tool definitions. It emits JSON schemas, maintains the registry of what's exposed, and nothing else. Dispatch logic and pool resolution live in the MCP server (see [mcp_demo](/mcp-demo/)).
+`defipy.tools` turns analytics primitives into MCP tool definitions. It emits JSON schemas, maintains the registry of what's exposed, and nothing else. Dispatch logic and pool resolution live in the MCP server (see [MCP Demo](/mcp-demo/)).
 
 **Key exports**
 
@@ -29,7 +29,7 @@ description: "defipy.tools turns analytics primitives into MCP tool definitions.
 
 **Usage**
 
-``` python
+```python
 import json
 from defipy.tools import get_schemas, list_tool_names, TOOL_REGISTRY
 
@@ -63,6 +63,6 @@ Dispatch parameters — `lp`, `token_in`, `depeg_token` — are absent from ever
 
 **Format support**
 
-v2.0 supports `"mcp"` only. `get_schemas("anthropic")` and `get_schemas("openai")` raise `NotImplementedError` with a v2.1 message. Both formats are derivable from MCP schemas with small envelope wrappers. See [binding_to_other_llms](/binding-to-other-llms/).
+v2.0 supports `"mcp"` only. `get_schemas("anthropic")` and `get_schemas("openai")` raise `NotImplementedError` with a v2.1 message. Both formats are derivable from MCP schemas with small envelope wrappers. See [Binding to Other LLMs](/binding-to-other-llms/).
 
-For the full tool-schema walkthrough, see [tool_schemas](/agentic-tool-schemas/). For the curation roadmap, see [roadmap](/roadmap/).
+For the full tool-schema walkthrough, see [Tool Schemas](/agentic-tool-schemas/). For the curation roadmap, see the [Roadmap](/roadmap/).

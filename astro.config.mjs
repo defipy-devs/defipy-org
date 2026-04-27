@@ -14,14 +14,35 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'DeFiPy',
+			logo: {
+				src: './src/assets/defipy_logo.png',
+				replacesTitle: true,
+			},
+			// Header right-corner icons. Starlight renders these in order, so
+			// GitHub stays leftmost and the legacy-docs link sits next to it.
+			// `label` is the accessibility text + hover tooltip — visitors who
+			// hover see "Legacy Docs (ReadTheDocs)" so the destination is clear.
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/defipy-devs/defipy' },
+				{ icon: 'external', label: 'Legacy Docs (ReadTheDocs)', href: 'https://defipy.readthedocs.io/en/latest/' },
 			],
 			customCss: [
 				'./src/styles/custom.css',
 				'katex/dist/katex.min.css',
 			],
+			// Sidebar default-state policy:
+			//   Always-open groups: Ecosystem, Getting Started, Concepts, DeFi Math.
+			//     These are the "user-guide" surface — landing visitors should see
+			//     the full IA at a glance.
+			//   Default-collapsed groups: Tutorials, Primitive API, Protocol API,
+			//     Roadmap. These are deeper / longer trees that would dominate the
+			//     sidebar if always expanded.
+			//   Starlight rule: omitting `collapsed` ⇒ open. `collapsed: true` ⇒
+			//     starts closed but auto-expands when the user is inside that section.
 			sidebar: [
+				// Top-level Home — mirrors the RTD sidebar's first entry.
+				{ label: 'Home', link: '/' },
+
 				{
 					label: 'DeFiPy Ecosystem',
 					items: [
@@ -31,6 +52,7 @@ export default defineConfig({
 						{ label: 'Presentations', slug: 'ecosystem/presentations' },
 					],
 				},
+
 				{
 					label: 'Getting Started',
 					items: [
@@ -40,34 +62,25 @@ export default defineConfig({
 						{ label: 'Legal', slug: 'legal' },
 					],
 				},
+
+				// Concepts — narrative / explanatory pages. Pairs with the
+				// API sections below in the scikit-learn pattern: User Guide
+				// (concepts) + API (reference).
 				{
-					label: 'Core Primitives',
+					label: 'Concepts',
 					items: [
-						{ label: 'Overview', slug: 'core-primitives' },
-					],
-				},
-				{
-					label: 'Agentic Primitives',
-					items: [
-						{ label: 'Overview', slug: 'agentic-primitives' },
+						{ label: 'Core Primitives', slug: 'core-primitives' },
+						{ label: 'Agentic Primitives', slug: 'agentic-primitives' },
 						{ label: 'The Primitive Contract', slug: 'primitive-contract' },
-						{ label: 'Tools Reference', slug: 'agentic-tools-reference' },
-						{ label: 'Twin Reference', slug: 'agentic-twin-reference' },
-						{ label: 'Result Dataclasses', slug: 'agentic-result-dataclasses' },
-						{ label: 'Primitive Pages', autogenerate: { directory: 'agentic-primitives' } },
-					],
-				},
-				{
-					label: 'Agentic DeFi',
-					items: [
-						{ label: 'Agentic Overview', slug: 'agentic-overview' },
 						{ label: 'Twin Concept', slug: 'twin-concept' },
+						{ label: 'Agentic Overview', slug: 'agentic-overview' },
 						{ label: 'Tool Schemas', slug: 'agentic-tool-schemas' },
 						{ label: 'Binding to Claude', slug: 'binding-to-claude' },
 						{ label: 'Binding to Other LLMs', slug: 'binding-to-other-llms' },
 						{ label: 'MCP Demo', slug: 'mcp-demo' },
 					],
 				},
+
 				{
 					label: 'DeFi Math',
 					items: [
@@ -77,8 +90,12 @@ export default defineConfig({
 						{ label: 'Stableswap Math', slug: 'math/stableswap-math' },
 					],
 				},
+
+				// Tutorials — collapsed by default. Long protocol-tree under each
+				// would dominate the sidebar if always open.
 				{
 					label: 'Tutorials',
+					collapsed: true,
 					items: [
 						{ label: 'Uniswap V2', autogenerate: { directory: 'tutorials/uniswapv2' } },
 						{ label: 'Uniswap V3', autogenerate: { directory: 'tutorials/uniswapv3' } },
@@ -86,23 +103,54 @@ export default defineConfig({
 						{ label: 'Stableswap', autogenerate: { directory: 'tutorials/stableswap' } },
 					],
 				},
+
+				// Primitive API — collapsed by default. Full class-tree on the
+				// reference side; visitors who want it will click in.
 				{
-					label: 'Primitive Classes',
+					label: 'Primitive API',
+					collapsed: true,
 					items: [
-						{ label: 'Abstract Uniswap', slug: 'abstract-uniswap' },
+						{
+							label: 'Core',
+							items: [
+								{ label: 'Overview', slug: 'api/primitive/core' },
+								{ label: 'Join', slug: 'api/primitive/core/join' },
+								{ label: 'Swap', slug: 'api/primitive/core/swap' },
+								{ label: 'AddLiquidity', slug: 'api/primitive/core/add-liquidity' },
+								{ label: 'RemoveLiquidity', slug: 'api/primitive/core/remove-liquidity' },
+								{ label: 'SwapDeposit', slug: 'api/primitive/core/swap-deposit' },
+								{ label: 'WithdrawSwap', slug: 'api/primitive/core/withdraw-swap' },
+								{ label: 'LPQuote', slug: 'api/primitive/core/lp-quote' },
+							],
+						},
+						{
+							label: 'Agentic',
+							items: [
+								{ label: 'Overview', slug: 'api/primitive/agentic' },
+								{ label: 'Tools Reference', slug: 'agentic-tools-reference' },
+								{ label: 'Twin Reference', slug: 'agentic-twin-reference' },
+								{ label: 'Result Dataclasses', slug: 'agentic-result-dataclasses' },
+								{ label: 'Categories', autogenerate: { directory: 'agentic-primitives' } },
+							],
+						},
 					],
 				},
+
+				// Protocol API — collapsed by default.
 				{
-					label: 'Protocol Classes',
+					label: 'Protocol API',
+					collapsed: true,
 					items: [
-						{ label: 'Primitive Uniswap V2', slug: 'primitive-uniswapv2' },
-						{ label: 'Primitive Uniswap V3', slug: 'primitive-uniswapv3' },
-						{ label: 'Primitive Balancer', slug: 'primitive-balancer' },
-						{ label: 'Primitive Stableswap', slug: 'primitive-stableswap' },
+						{ label: 'Uniswap V2', slug: 'api/protocol/uniswap-v2' },
+						{ label: 'Uniswap V3', slug: 'api/protocol/uniswap-v3' },
+						{ label: 'Balancer', slug: 'api/protocol/balancer' },
+						{ label: 'Stableswap', slug: 'api/protocol/stableswap' },
 					],
 				},
+
 				{
 					label: 'Roadmap & Changelog',
+					collapsed: true,
 					items: [
 						{ label: 'Roadmap', slug: 'roadmap' },
 					],

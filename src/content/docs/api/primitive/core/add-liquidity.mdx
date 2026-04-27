@@ -1,0 +1,86 @@
+---
+title: "AddLiquidity"
+description: "Double-sided deposit. Provide one token; the matching amount of the other is calculated from current reserves to maintain the pool's price ratio."
+---
+
+```python
+class defipy.process.AddLiquidity()
+```
+
+Double-sided deposit into an initialized pool. The caller supplies one token amount; the matching amount of the other token is calculated from current reserves to maintain the pool's price ratio. LP tokens are minted to the user proportionally to their share of total liquidity.
+
+Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+
+## Methods
+
+### apply
+
+```python
+AddLiquidity().apply(pool, token_in, user, amount_in)
+```
+
+Add liquidity to `pool` on behalf of `user` by depositing `amount_in` of `token_in`. The matching amount of the other token is computed and also debited from the user.
+
+**Parameters**
+
+| Name | Type | Description |
+|---|---|---|
+| `pool` | exchange | Pool instance to add liquidity to. |
+| `token_in` | `ERC20` | One side of the deposit. The other side is sized automatically. |
+| `user` | `str` | User address (string identifier) who provides liquidity and receives LP tokens. |
+| `amount_in` | `float` | Amount of `token_in` to deposit. |
+
+**Returns**
+
+`None`. The pool's reserves grow, LP-token supply grows, and the user's LP-token balance grows. Inspect `pool.summary()` after the call.
+
+## Example
+
+### Add via token0 (other side calculated)
+
+```python
+from defipy import *
+
+user_nm = 'user'
+eth_amount = 1000
+tkn_amount = 100000
+
+tkn = ERC20("TKN", "0x111")
+eth = ERC20("ETH", "0x09")
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, tkn_amount)
+AddLiquidity().apply(lp, eth, user_nm, 10)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 101000.0
+Liquidity: 10100.0`}</div>
+
+### Add via token1 (other side calculated)
+
+```python
+AddLiquidity().apply(lp, tkn, user_nm, 1000)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Reserves: ETH = 1010.0, TKN = 101000.0
+Liquidity: 10100.0`}</div>
+
+## Notes
+
+- **The pool's price doesn't change.** Both sides scale by the same proportion; the ratio of reserves is preserved. Adding liquidity is *not* a swap.
+- **For pools that haven't been initialized yet, use [`Join`](/api/primitive/core/join/).** `AddLiquidity` requires a non-zero LP supply.
+- For single-sided deposits — providing only one token — see [`SwapDeposit`](/api/primitive/core/swap-deposit/).
+
+## See also
+
+- [`Join`](/api/primitive/core/join/) — first-time pool initialization.
+- [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — the inverse operation.
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided variant.
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.

@@ -1,0 +1,60 @@
+---
+title: "Balancer API"
+description: "Protocol-specific class reference for Balancer weighted pools: factory, exchange, vault, and IL math from balancerpy."
+---
+
+Protocol-specific classes for Balancer — the weighted-pool AMM with the geometric-mean invariant. These live in [`balancerpy`](https://github.com/defipy-devs/balancerpy) and are imported into DeFiPy's namespace at install time.
+
+When working through DeFiPy's [Core API](/api/primitive/core/), you typically don't touch these classes directly — `Join`, `Swap`, `AddLiquidity`, `RemoveLiquidity` dispatch to them. You'll reach for them when constructing a custom-weighted pool, querying vault state, or extending the library.
+
+:::caution
+Per-class detail pages with full signature / parameter / method documentation are in progress. Today's page is an inventory of the public API surface; for working examples see the linked tutorials.
+:::
+
+## Public classes
+
+### Factory and exchange
+
+| Class | Module | Purpose |
+|---|---|---|
+| `BalancerFactory` | `balancerpy.cpt.factory` | Deploys weighted pools. |
+| `BalancerExchange` | `balancerpy.cpt.exchg` | The pool — token reserves, normalized weights, swap fee, pool-share supply. |
+| `BalancerExchangeData` | `balancerpy.cpt.exchg` | Configuration object passed to the factory. |
+| `BalancerVault` | `balancerpy.cpt.vault` | Vault holding pool's underlying tokens. Exchange tokens via `vault.get_token(name)`. |
+
+### Math and analytics
+
+| Module | Purpose |
+|---|---|
+| `balancerpy.analytics.risk` | `BalancerImpLoss` — weighted-pool IL math, 2-asset, fee-free spot internally. Used by [`AnalyzeBalancerPosition`](/api/primitive/agentic/) and [`SimulateBalancerPriceMove`](/api/primitive/agentic/). |
+
+## Conventions
+
+- **Weights are normalized.** The 50/50 ETH/DAI pool has `tkn_weights = {'ETH': 0.5, 'DAI': 0.5}`. Asymmetric weighting (80/20, 95/5, etc.) is supported.
+- **`SWAP_FEE` is 0.25%** by default — set on `BalancerExchange` at module load. Compare to V2's 30 bps.
+- **`get_price` bakes in the fee.** `pool.get_price(base, opp)` applies the SWAP_FEE scale factor — correct for trade sizing, *wrong* for IL analysis. Compute fee-free spot manually: `(b_opp / w_opp) / (b_base / w_base)`.
+- **2-asset only in v1.** N-asset weighted pools are supported by Balancer the protocol, but DeFiPy's IL math and analytics primitives are 2-asset for now.
+- **Tokens accessed via the vault.** Unlike V2/V3 where `lp.factory.token_from_exchange[lp.name][lp.token0]` returns the ERC20, Balancer uses `lp.vault.get_token(name)`.
+
+## Construction example
+
+```python
+from defipy import *
+
+eth = ERC20("ETH", "0x09")
+dai = ERC20("DAI", "0x111")
+
+# 50/50 ETH/DAI weighted pool — see tutorial for full setup.
+factory = BalancerFactory("ETH-DAI factory", "0x2")
+# ...exchange data construction with weights...
+# lp = factory.deploy(exchg_data)
+```
+
+For a complete construction walkthrough see the [Balancer abstract-interface tutorial](/tutorials/balancer/abstract-balancer-test/).
+
+## See also
+
+- [Core API](/api/primitive/core/) — execution dispatchers.
+- [Tutorials → Balancer](/tutorials/balancer/abstract-balancer-test/) — runnable walkthrough.
+- [Balancer Math](/math/balancer-math/) — geometric-mean invariant and weighted-pool derivations.
+- [`balancerpy` on GitHub](https://github.com/defipy-devs/balancerpy) — protocol library source.

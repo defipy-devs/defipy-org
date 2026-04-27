@@ -1,6 +1,6 @@
 ---
 title: "MCP Server Demo Walkthrough"
-description: "The reference MCP server at python/mcp/defipy_mcp_server.py closes the end-to-end agentic loop: receive a tool call, build a twin, run the primitive,…"
+description: "The reference MCP server closes the end-to-end agentic loop: receive a tool call, build a twin, run the primitive, serialize the dataclass result, return it."
 ---
 
 The reference MCP server at `python/mcp/defipy_mcp_server.py` closes the end-to-end agentic loop: receive a tool call, build a twin, run the primitive, serialize the dataclass result, return it. This page walks through the verified-live session from the v2.0 release.
@@ -20,7 +20,7 @@ Each tool is restricted to the recipes it's compatible with. `AnalyzeBalancerPos
 
 **Running standalone**
 
-``` bash
+```bash
 python python/mcp/defipy_mcp_server.py
 ```
 
@@ -35,7 +35,7 @@ The session that validated the v2.0 ship:
 
 **MCP server trace (one line to stderr):**
 
-``` json
+```json
 {"ts": "2026-04-23T...", "tool": "CheckPoolHealth",
  "pool_id": "eth_dai_v2", "args": {},
  "status": "ok", "duration_ms": 0.31}
@@ -52,7 +52,7 @@ The session that validated the v2.0 ship:
 
 **Returned dataclass (abbreviated):**
 
-``` python
+```python
 PoolHealth(
     version="V2",
     token0_name="ETH", token1_name="DAI",
@@ -78,5 +78,5 @@ The numeraire discipline held. Claude presented TVL in ETH-equivalent (2000 ETH 
 The substrate worked as designed. A DeFi analytics primitive that happens to be callable by an LLM is stable; the v2.0 ship proved this empirically.
 
 :::note
-The MCP server's 10 tools are a curated subset of the 21 primitives shipped in DeFiPy. See [tool_schemas](/agentic-tool-schemas/) for the curation rationale and [agentic_primitives_by_category](/agentic-primitives/) for the full primitive catalog.
+The MCP server's 10 tools are a curated subset of the 21 primitives shipped in DeFiPy. See [Tool Schemas](/agentic-tool-schemas/) for the curation rationale and [Agentic Primitives](/agentic-primitives/) for the full primitive catalog.
 :::

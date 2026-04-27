@@ -1,6 +1,6 @@
 ---
 title: "Overview"
-description: "Large language models are good at reasoning about DeFi positions and poor at computing AMM math. DeFiPy v2 sits in that gap. The 21 analytics primitives…"
+description: "Large language models are good at reasoning about DeFi positions and poor at computing AMM math. DeFiPy v2 sits in that gap."
 ---
 
 Large language models are good at reasoning about DeFi positions and poor at computing AMM math. DeFiPy v2 sits in that gap. The 21 analytics primitives shipped in v1 do the math; v2 exposes 10 of them as [Model Context Protocol](https://modelcontextprotocol.io) tools, so an LLM can call them the same way a quant calls them from a notebook.
@@ -15,13 +15,13 @@ The loop was verified live before release: a Claude Desktop session asked *"chec
 
 **What this section covers**
 
-- [tool_schemas](/agentic-tool-schemas/) — how `defipy.tools` turns a primitive into an MCP tool definition
-- [binding_to_claude](/binding-to-claude/) — wiring the shipped MCP server into Claude Desktop and Claude Code
-- [binding_to_other_llms](/binding-to-other-llms/) — the same primitives, other tool-calling interfaces (v2.1)
-- [mcp_demo](/mcp-demo/) — a walkthrough of the reference MCP server, including the full request/response trace from the verified session
+- [Tool Schemas](/agentic-tool-schemas/) — how `defipy.tools` turns a primitive into an MCP tool definition
+- [Binding to Claude](/binding-to-claude/) — wiring the shipped MCP server into Claude Desktop and Claude Code
+- [Binding to Other LLMs](/binding-to-other-llms/) — the same primitives, other tool-calling interfaces (v2.1)
+- [MCP Demo](/mcp-demo/) — a walkthrough of the reference MCP server, including the full request/response trace from the verified session
 
 The substrate separation is deliberate. A DeFi analytics primitive that happens to be callable by an LLM is stable; an agent framework that happens to call analytics primitives is not. v2 commits to the first posture.
 
 :::note
-The 10 primitives curated as MCP tools are a subset of the 21 shipped. Every shipped primitive is importable, documented, and tested — the curation is about what makes a good LLM tool, not what's "real." See [agentic_categories](/agentic-primitives/) for the full catalog.
+The 10 primitives curated as MCP tools are a subset of the 21 shipped. Every shipped primitive is importable, documented, and tested — the curation is about what makes a good LLM tool, not what's "real." See [Agentic Primitives](/agentic-primitives/) for the full catalog.
 :::

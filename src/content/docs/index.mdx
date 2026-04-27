@@ -1,34 +1,162 @@
 ---
-title: DeFiPy
-description: A Python framework for analyzing and simulating DeFi positions across Uniswap V2, V3, Balancer, and Stableswap.
-template: splash
-hero:
-  tagline: A Python framework for analyzing and simulating DeFi positions across Uniswap V2, V3, Balancer, and Stableswap.
-  actions:
-    - text: Get started
-      link: /quick/
-      icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/defipy-devs/defipy
-      icon: external
-      variant: minimal
+title: "DeFiPy: Python SDK for Agentic DeFi"
+description: "Unified Python SDK for agentic DeFi — analytics, simulation, and LLM-native tool schemas. Hand-derived AMM math across Uniswap V2, V3, Balancer, and Stableswap."
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-## What's inside
+[DeFiPy](https://github.com/defipy-devs/defipy) is a unified Python SDK for agentic DeFi, covering analytics, simulation, and LLM-native tool schemas for autonomous agents. Built with modularity in mind, it exposes DeFi primitives as MCP tools and lets you isolate and extend your analytics by protocol using:
 
-<CardGrid stagger>
-	<Card title="Core Primitives" icon="puzzle">
-		Execution primitives that mutate pool state — mint, burn, swap, zap — abstracted across protocols. [Read more](/core-primitives/)
-	</Card>
-	<Card title="Agentic Primitives" icon="rocket">
-		Stateless, typed analytics that answer questions about positions, pools, and risk. Callable from notebooks or LLMs. [Read more](/agentic-primitives/)
-	</Card>
-	<Card title="Tutorials" icon="open-book">
-		Walk-throughs for Uniswap V2 and V3, Balancer, and Stableswap pools. [Browse tutorials](/tutorials/uniswapv2/uniswap-v2/)
-	</Card>
-	<Card title="DeFi Math" icon="document">
-		The math underpinning Uniswap V2/V3 invariants, Balancer weighted pools, and Stableswap amplification. [See math](/math/univ2-math/)
-	</Card>
+- [UniswapPy](https://github.com/defipy-devs/uniswappy)
+- [BalancerPy](https://github.com/defipy-devs/balancerpy)
+- [StableswapPy](https://github.com/defipy-devs/stableswappy)
+
+New here? The [Quick Start](/quick/) walks through the essential Core Primitives — pool setup, `Join`, `Swap` — protocol by protocol. For onchain event access, pair with [Web3Scout](https://github.com/defipy-devs/web3scout).
+
+> Looking for the older docs? They're still live at [defipy.readthedocs.io](https://defipy.readthedocs.io/en/latest/) while the migration to defipy.org continues.
+
+🔗 DAPX-Anchor: [anchorregistry.ai/AR-2026-YdPXB5g](https://anchorregistry.ai/AR-2026-YdPXB5g)
+
+## Where to start
+
+<CardGrid>
+  <LinkCard
+    title="🤖 Building an agent?"
+    href="/agentic-overview/"
+    description="Wire DeFiPy primitives into Claude Desktop, Claude Code, or any MCP-compatible client. 10 curated tools ship with schemas; a reference MCP server closes the end-to-end loop."
+  />
+  <LinkCard
+    title="📊 Running analytics?"
+    href="/agentic-primitives/"
+    description="21 stateless, typed primitives across 9 categories — position analysis, risk, pool health, price scenarios, portfolio aggregation. Every primitive returns a structured dataclass."
+  />
+  <LinkCard
+    title="🔧 Executing swaps & liquidity?"
+    href="/core-primitives/"
+    description="Cross-protocol execution primitives: Join, Swap, AddLiquidity, SwapDeposit, LPQuote. Unified interface across Uniswap V2, V3, Balancer, and Stableswap."
+  />
+  <LinkCard
+    title="📐 Learning the math?"
+    href="/math/univ3-math/"
+    description="Hand-derived AMM math across all four protocols — sqrt-price and ticks for Uniswap V3, weighted pools for Balancer, amplification for Stableswap. Runnable as Jupyter notebooks."
+  />
+</CardGrid>
+
+## Quick install
+
+```bash
+pip install defipy
+```
+
+Core install is pure math — no chain reads, no LLM dependencies. For MCP server, chain reads, or Foundry workflows, see [Installation](/installation/).
+
+## Here's what a primitive call looks like
+
+```python
+from defipy import AnalyzePosition
+from defipy.twin import MockProvider, StateTwinBuilder
+
+# Build a synthetic ETH/DAI Uniswap V2 pool
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp = builder.build(provider.snapshot("eth_dai_v2"))
+
+# Ask the primitive: why is this LP position gaining or losing money?
+result = AnalyzePosition().apply(
+    lp,
+    lp_init_amt = 1.0,
+    entry_x_amt = 1000,
+    entry_y_amt = 100000,
+)
+
+print(f"Diagnosis:    {result.diagnosis}")
+print(f"Net PnL:      {result.net_pnl:.4f}")
+print(f"IL %:         {result.il_percentage:.4f}")
+print(f"Current val:  {result.current_value:.4f}")
+```
+
+`MockProvider` ships canonical synthetic pools; `StateTwinBuilder` turns a snapshot into a usable exchange object; any primitive runs against it. The same pattern works against live chain state once `LiveProvider` ships in v2.1 — the primitives don't care where the pool state came from.
+
+## What makes DeFiPy different
+
+Most Python DeFi libraries wrap chain queries from The Graph. DeFiPy ships the **math** — hand-derived invariants for four AMM families, exposed as composable typed primitives that an LLM can call directly via [Model Context Protocol](https://modelcontextprotocol.io).
+
+<CardGrid>
+  <Card title="Exact math, not approximations" icon="approve-check">
+    No textbook IL formulas. Closed-form expressions derived from each protocol's invariant — `xy = k` for V2, `L = √(xy)` with concentrated ticks for V3, weighted geometric mean for Balancer, the ε ↔ δ relation for Stableswap.
+  </Card>
+  <Card title="Substrate, not agent" icon="puzzle">
+    DeFiPy is the foundation. It has zero LLM dependencies and zero web3 dependencies in the core install. Build whatever agent you want on top — DeFiMind, LangChain, custom MCP server, your own framework.
+  </Card>
+  <Card title="Composable typed primitives" icon="rocket">
+    Every primitive follows the same contract: stateless construction, computation at `.apply()`, typed dataclass return. Same call shape from a Jupyter notebook or from Claude calling it as a tool.
+  </Card>
+  <Card title="Plan, don't execute" icon="seti:lock">
+    No signing keys. Ever. Primitives like `OptimalDepositSplit` and `EvaluateRebalance` return structured plans the caller can inspect, serialize, approve, or hand to whatever execution runtime they trust.
+  </Card>
+</CardGrid>
+
+## Install options
+
+<Tabs>
+  <TabItem label="Core (analytics only)">
+    ```bash
+    pip install defipy
+    ```
+    Pure analytics — AMM math, primitives, State Twin, all 21 typed analytics functions. Zero web3 dependencies, zero LLM dependencies.
+  </TabItem>
+  <TabItem label="MCP server (Claude Desktop / Code)">
+    ```bash
+    pip install defipy[mcp]
+    ```
+    Adds the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for serving DeFiPy primitives as tools to MCP clients. See [Binding to Claude](/binding-to-claude/) for config snippets.
+  </TabItem>
+  <TabItem label="Onchain (chain reads)">
+    ```bash
+    pip install defipy[book]
+    ```
+    Adds [Web3Scout](https://github.com/defipy-devs/web3scout) for live chain integration — event monitoring, ABI loading, token fetching. Used by chapter 9 of the book.
+  </TabItem>
+</Tabs>
+
+## Built on the DeFiPy ecosystem
+
+DeFiPy unifies four protocol-specific Python libraries under one consistent surface:
+
+<CardGrid>
+  <LinkCard
+    title="UniswapPy"
+    href="https://github.com/defipy-devs/uniswappy"
+    description="Uniswap V2 and V3 implementations. Constant-product math, concentrated liquidity, tick math, sqrt-price arithmetic."
+  />
+  <LinkCard
+    title="BalancerPy"
+    href="https://github.com/defipy-devs/balancerpy"
+    description="Weighted-pool implementation. Geometric-mean invariant, asymmetric token weights, custom-weight LP modeling."
+  />
+  <LinkCard
+    title="StableswapPy"
+    href="https://github.com/defipy-devs/stableswappy"
+    description="Curve-style stableswap. Amplification coefficient, ε ↔ δ closed-form, depeg risk modeling, flat-curve regime."
+  />
+  <LinkCard
+    title="Web3Scout"
+    href="https://github.com/defipy-devs/web3scout"
+    description="Onchain event monitoring. ABI loaders, token fetchers, pool discovery. Used by the optional [book] extra for live chain reads."
+  />
+</CardGrid>
+
+## Learning resources
+
+<CardGrid>
+  <LinkCard
+    title="📘 DeFiPy: Python SDK for On-Chain Analytics"
+    href="https://www.amazon.com/dp/B0G3RV5QRB"
+    description="Textbook covering AMM math, risk modeling, and agent-based simulation. Chapter 9 builds autonomous DeFi agents on the legacy event-driven runtime; chapter content compatible with v2 primitives lands in the second edition."
+  />
+  <LinkCard
+    title="🎓 On-Chain Analytics Foundations"
+    href="https://defipy.thinkific.com/products/courses/foundations"
+    description="Practical course on transforming raw blockchain data into Python analytics pipelines. Companion to the book."
+  />
 </CardGrid>

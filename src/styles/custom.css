@@ -1,14 +1,94 @@
+/* ---- Brand palette --------------------------------------------------- */
+
 :root {
+	/* Wine accent — kept consistent with RTD palette */
 	--sl-color-accent-low: #4a2334;
 	--sl-color-accent: #673147;
 	--sl-color-accent-high: #8a4763;
+
+	/* Dark-mode header background — deeper wine, closer to burgundy-black */
+	--sl-color-bg-nav: #321723;
+	--sl-color-bg-sidebar: var(--sl-color-bg);
+
+	/* Header band height — must accommodate the logo + small vertical padding.
+	 * Logo is 5.25rem; ~0.75rem total padding ⇒ 6rem band. */
+	--sl-nav-height: 6rem;
+	--sl-nav-pad-y: 0.375rem;
 }
 
 :root[data-theme='light'] {
 	--sl-color-accent-low: #f3dde6;
 	--sl-color-accent: #673147;
 	--sl-color-accent-high: #4a2334;
+
+	/* Light-mode header background — darker wine for stronger contrast
+	 * against the page body. */
+	--sl-color-bg-nav: #4a2334;
+	--sl-color-bg-sidebar: var(--sl-color-bg);
 }
+
+/* ---- Header bar ------------------------------------------------------ */
+/*
+ * Force the wine band across the full width of the top bar. Starlight's
+ * header element is `header.header`. Inside it: logo, search, social links.
+ * (Wordmark is hidden via `replacesTitle: true` in astro.config.mjs.)
+ * Override text + icon colors to stay legible on wine.
+ */
+header.header {
+	background-color: var(--sl-color-bg-nav);
+	border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+	height: var(--sl-nav-height);
+}
+
+/* Search input + button — keep readable inside the wine bar */
+header.header [data-open-modal] {
+	background-color: rgba(255, 255, 255, 0.12);
+	color: #ffffff;
+	border-color: rgba(255, 255, 255, 0.25);
+}
+header.header [data-open-modal]:hover {
+	background-color: rgba(255, 255, 255, 0.20);
+}
+header.header [data-open-modal] kbd {
+	background-color: rgba(255, 255, 255, 0.20);
+	color: #ffffff;
+	border-color: rgba(255, 255, 255, 0.30);
+}
+
+/* Social icons (GitHub) and theme toggle */
+header.header .social-icons a,
+header.header starlight-theme-select select,
+header.header starlight-theme-select label {
+	color: #ffffff;
+}
+header.header .social-icons a:hover {
+	color: #f3dde6;
+}
+
+/* Theme select dropdown */
+header.header starlight-theme-select select {
+	background-color: rgba(255, 255, 255, 0.12);
+	border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Mobile hamburger */
+header.header starlight-menu-button button {
+	color: #ffffff;
+}
+
+/* ---- Logo sizing ----------------------------------------------------- */
+/*
+ * 5.25rem logo on a 6rem band leaves ~0.375rem padding above and below.
+ * (Both numbers are 25% smaller than the previous 7rem / 8rem.)
+ * The wordmark "DeFiPy" is suppressed via `replacesTitle: true` in
+ * astro.config.mjs, so this is the only branding element in the header.
+ */
+.site-title img {
+	height: 5.25rem;
+	width: auto;
+}
+
+/* ---- Notebook output blocks ----------------------------------------- */
 
 .nb-output {
 	background: var(--sl-color-gray-6);

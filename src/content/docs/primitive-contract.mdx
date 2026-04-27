@@ -1,11 +1,11 @@
 ---
 title: "The Primitive Contract"
-description: "Every analytics primitive in DeFiPy follows the same three-line contract:"
+description: "Every analytics primitive in DeFiPy follows the same three-line contract: stateless construction, computation at apply(), typed dataclass return."
 ---
 
 Every analytics primitive in DeFiPy follows the same three-line contract:
 
-``` python
+```python
 primitive = SomePrimitive()                     # Stateless construction
 result    = primitive.apply(lp, *args)          # Computation
 value     = result.<field>                      # Typed dataclass access
@@ -16,18 +16,18 @@ This contract is what makes the primitives composable, testable, and exposable a
 Three invariants hold across all 21 primitives:
 
 - **Stateless construction.** `SomePrimitive()` takes no state that affects the math. Any parameters passed at construction time (e.g., `DetectFeeAnomaly(threshold_bps=10)`) are tuning, not state — calling `.apply()` twice with the same arguments returns the same answer.
-- **Computation at** `apply()`. All work happens in one call. Primitives do not subscribe, stream, or maintain internal caches.
+- **Computation at `apply()`.** All work happens in one call. Primitives do not subscribe, stream, or maintain internal caches.
 - **Typed dataclass return.** Every primitive returns a specific result dataclass (`PositionAnalysis`, `PriceMoveScenario`, `PoolHealth`, etc.) with named fields. Nothing is returned as a raw tuple, a dict, or a string. Callers — human or LLM — can rely on field names.
 
 These invariants aren't just stylistic. They're what lets the library serve three audiences with one interface: notebook quants who want typed introspection, LLMs that need JSON-serializable outputs, and agent frameworks that compose primitives into larger tools.
 
 **What this section covers**
 
-- [agentic_categories](/agentic-primitives/) — the 9 categories, each listing the primitives that belong and their call signatures
-- [agentic_tools_reference](/agentic-tools-reference/) — `defipy.tools` module: schema emission, registry, binding
-- [agentic_twin_reference](/agentic-twin-reference/) — `defipy.twin` module: provider interface and snapshot types
-- [agentic_result_dataclasses](/agentic-result-dataclasses/) — the full catalog of result dataclasses returned by the primitives
+- [Agentic Primitives](/agentic-primitives/) — the 9 categories, each listing the primitives that belong and their call signatures
+- [Tools Reference](/agentic-tools-reference/) — `defipy.tools` module: schema emission, registry, binding
+- [Twin Reference](/agentic-twin-reference/) — `defipy.twin` module: provider interface and snapshot types
+- [Result Dataclasses](/agentic-result-dataclasses/) — the full catalog of result dataclasses returned by the primitives
 
 :::note
-"Primitive" here means an analytics primitive — `AnalyzePosition`, `CheckPoolHealth`, etc. The word is also used elsewhere in the docs at a lower layer to mean the protocol-bound exchange classes (`UniswapExchange`, `BalancerExchange`). Those live under [primitive_uniswapv2](/primitive-uniswapv2/) and siblings. The Agentic Primitives section is specifically about the stateless, typed, composable layer — the 21 classes exported from `defipy.primitives`.
+"Primitive" here means an analytics primitive — `AnalyzePosition`, `CheckPoolHealth`, etc. The word is also used elsewhere in the docs at a lower layer to mean the protocol-bound exchange classes (`UniswapExchange`, `BalancerExchange`). Those live under [Protocol API → Uniswap V2](/api/protocol/uniswap-v2/) and siblings. The Agentic Primitives section is specifically about the stateless, typed, composable layer — the 21 classes exported from `defipy.primitives`.
 :::
