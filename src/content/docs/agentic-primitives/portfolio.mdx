@@ -126,12 +126,16 @@ except ValueError as e:
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+`AggregatePortfolio` is the canonical *breadth-chain* — one primitive applied N times, results aggregated. Cross-protocol dispatch lives in this aggregator, not in the per-protocol leaf analyzers (composition-layer dispatch scales; primitive-layer dispatch does not). All positions in a single call must share a common first-token numeraire.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | Full IL + fee decomposition contributes |
-| Uniswap V3 | ✅ | With `lwr_tick` / `upr_tick` for concentrated positions |
-| Balancer | ✅ | 2-asset only; `fee_income` always 0 in v1 |
-| Stableswap | ⚠️ | Unreachable-alpha positions contribute 0 and add a warning; numeraire must match (peg-token positions vs ETH-token positions can't mix) |
+| Uniswap V2 | Full | `entry_x_amt` / `entry_y_amt`; full PnL contribution to portfolio totals. |
+| Uniswap V3 | Full | Same input shape as V2 plus optional `lwr_tick` / `upr_tick` for tick-aware analysis. |
+| Balancer | Full | `entry_x_amt` / `entry_y_amt` (mapped to base/opp internally); `fee_income = 0.0` (upstream limit). |
+| Stableswap | Partial | Uses `entry_amounts` (list, not pair); unreachable-alpha positions contribute `0.0` to totals and append to `shared_exposure_warnings`; `fee_income = 0.0` (upstream limit). |
+
+Numeraire must match across positions in a single call (peg-token positions vs ETH-token positions can't mix) — the aggregator raises `ValueError` if first-tokens differ.
 
 ## MCP tool exposure
 
