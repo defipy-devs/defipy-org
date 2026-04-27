@@ -1,0 +1,91 @@
+---
+title: "DetectRugSignals"
+description: "Threshold-based rug-pull signal detector. Depth-chains over CheckPoolHealth and applies threshold comparators to surface a count-based risk bucket. Surfaces signals; verdict is the caller's."
+---
+
+`DetectRugSignals` is a **read-only**, stateless primitive that depth-chains over [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) and applies threshold comparators to surface a count-based risk bucket. **Reads state and applies thresholds** — not a derivation, despite the dramatic name.
+
+The primitive surfaces signals; the verdict belongs to the caller. There's no `is_rug = True` flag — that would be evaluative; `risk_level` is descriptive.
+
+V2 / V3 only (composed over `CheckPoolHealth`'s scope).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `DetectRugSignals().apply(lp, lp_concentration_threshold=0.90, tvl_floor=10.0)` |
+| Uniswap V3 | Same — but `inactive_with_liquidity` is V2-only and always returns `False` on V3 |
+| Balancer | ❌ N/A — pool-health framing doesn't map |
+| Stableswap | ❌ N/A |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP. |
+| `lp_concentration_threshold` | `float` *(default `0.90`)* | Top-LP share above which `single_sided_concentration` flags. **Strict `>`** — passing `1.0` disables this signal. |
+| `tvl_floor` | `float` *(default `10.0`)* | TVL (in token0) below which `tvl_suspiciously_low` flags. |
+
+## What this measures
+
+Three threshold-derived boolean signals over [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/)'s output:
+
+- **`tvl_suspiciously_low`** — `pool.tvl_in_token0 < tvl_floor`
+- **`single_sided_concentration`** — `pool.top_lp_share_pct > lp_concentration_threshold` (strict `>`)
+- **`inactive_with_liquidity`** — V2-only: pool has TVL but no recent fee accrual (depends on `fee_accrual_rate_recent`, which is `None` on V3, so this signal is always `False` on V3)
+
+**Risk bucket** based on the count of triggered signals:
+
+| Signals triggered | `risk_level` |
+|---|---|
+| 0 | `"low"` |
+| 1 | `"medium"` |
+| 2 | `"high"` |
+| 3 | `"critical"` |
+
+**`details`** — list of human-readable strings explaining which signals triggered and why. Useful for surfacing to LLMs that need to explain the risk_level rather than just bucket-tagging.
+
+**`pool_health`** — the composed `CheckPoolHealth` result is returned as a field, so callers don't have to re-run that primitive separately if they want the underlying state.
+
+**Threshold philosophy.** Defaults err on the side of *not* flagging clean pools — `tvl_floor = 10.0` (in token0) and `lp_concentration_threshold = 0.90` are intentionally permissive. Tighten them for sensitive use cases; loosen them for high-volume mature pools. The primitive *surfaces* signals; what counts as "rug" depends on context the primitive can't know.
+
+## Example
+
+```python
+from defipy import DetectRugSignals
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+result = DetectRugSignals().apply(lp_v2)
+
+print(f"risk_level:                    {result.risk_level}")
+print(f"signals_detected:              {result.signals_detected}")
+print(f"tvl_suspiciously_low:          {result.tvl_suspiciously_low}")
+print(f"single_sided_concentration:    {result.single_sided_concentration}")
+print(f"inactive_with_liquidity:       {result.inactive_with_liquidity}")
+print(f"details:                       {result.details}")
+```
+
+<div class="nb-output">{`risk_level:                    high
+signals_detected:              2
+tvl_suspiciously_low:          False
+single_sided_concentration:    True
+inactive_with_liquidity:       True
+details:                       ['single_sided_concentration: top LP holds 100.0% of supply (threshold 90.0%)', 'inactive_with_liquidity: pool has 2000.0000 TVL but zero swaps']`}</div>
+
+A freshly-initialized pool with a single LP and no swap activity flags two signals → `risk_level = "high"`. Tightening `lp_concentration_threshold = 0.95` would reduce to one signal (`risk_level = "medium"`) since the single-LP test would still trip; loosening to `1.0` disables the concentration signal entirely.
+
+## How this composes
+
+- **Depth-chain over** [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — applies threshold comparators to the snapshot.
+- Independent of [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) — that primitive is invariant-vs-contract; this one is threshold-over-state.
+
+## See also
+
+- [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — the underlying snapshot
+- [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) — adjacent forensic check (different question)
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset.

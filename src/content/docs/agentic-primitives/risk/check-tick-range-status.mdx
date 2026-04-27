@@ -1,0 +1,85 @@
+---
+title: "CheckTickRangeStatus"
+description: "V3 range-status measurement. pct_to_lower / pct_to_upper / in_range / range_width_pct from the pool's current tick. No math beyond unit conversion."
+---
+
+`CheckTickRangeStatus` is a **read-only**, stateless primitive that reports where the pool's current tick sits relative to a position's range bounds. **Read-only structured measurement** — no math beyond unit conversion from ticks to percent.
+
+V3 only — V2 raises `ValueError`. Stableswap and Balancer don't have ranges in this sense (depeg-risk primitives serve that role for stableswap).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | ❌ Raises `ValueError` — V2 is range-less |
+| Uniswap V3 | `CheckTickRangeStatus().apply(lp, lwr_tick, upr_tick)` |
+| Balancer | ❌ Not applicable |
+| Stableswap | ❌ Use [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) for the analogous question |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapV3Exchange` | V3 LP exchange. V2 raises. |
+| `lwr_tick` | `int` | Lower tick of the position. Need not be `tick_spacing`-aligned (real positions are, but the primitive accepts any valid tick in `[MIN_TICK, MAX_TICK]`). |
+| `upr_tick` | `int` | Upper tick. Must be `> lwr_tick`. |
+
+## What this measures
+
+Where the pool's current tick sits relative to the position's range bounds, in percentage terms:
+
+- **`current_tick`** — the pool's `slot0.tick`
+- **`lower_tick` / `upper_tick`** — echoed from input
+- **`in_range`** — bool: `lower_tick ≤ current_tick ≤ upper_tick`
+- **`pct_to_lower`** — fractional distance from current tick to lower bound. **Positive** when in-range; **negative** when current_tick has crossed below `lower_tick`. Useful as an out-of-range signal.
+- **`pct_to_upper`** — fractional distance from current tick to upper bound. Same sign convention.
+- **`range_width_pct`** — `(upr − lwr)` translated to a percentage range width via tick-to-price conversion.
+
+The percentages are tick-to-price conversions (not raw tick deltas) — `tick → price` is `1.0001^tick`, so a 1000-tick gap is ~10.5% in price terms.
+
+**The primitive does not interpret.** It does not say *"your range is about to expire"* or *"you should rebalance."* It reports the position; the caller decides what to do.
+
+## Example
+
+```python
+from defipy import CheckTickRangeStatus
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
+
+# Current ETH/DAI price = 100 → tick ≈ 46054.
+# Tight in-range position centered on current tick:
+result = CheckTickRangeStatus().apply(lp_v3, lwr_tick=45000, upr_tick=47000)
+
+print(f"current_tick:       {result.current_tick}")
+print(f"lower / upper:      {result.lower_tick} / {result.upper_tick}")
+print(f"in_range:           {result.in_range}")
+print(f"pct_to_lower:       {result.pct_to_lower:.6f}")
+print(f"pct_to_upper:       {result.pct_to_upper:.6f}")
+print(f"range_width_pct:    {result.range_width_pct:.6f}")
+```
+
+<div class="nb-output">{`current_tick:       46054
+lower / upper:      45000 / 47000
+in_range:           True
+pct_to_lower:       0.100031
+pct_to_upper:       0.099213
+range_width_pct:    0.199245`}</div>
+
+The current price sits ~10% above the lower bound and ~10% below the upper — a centered in-range position with a ~20% total width.
+
+## How this composes
+
+- Independent leaf primitive — does not depend on other agentic primitives.
+- Composed *into* by [`CompareFeeTiers`](/agentic-primitives/comparison/compare-fee-tiers/) for per-candidate `in_range` status.
+
+## See also
+
+- [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/) — adjacent V3 question (range-width tradeoff)
+- [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) — Stableswap analogous question (depeg risk vs range-status)
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — V3 IL/PnL decomposition for the same position
+- [Uniswap V3 math](/math/univ3-math/) — tick math
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Not in the curated 10 — easy to compose LLM-side from `lp.slot0.tick` and the position's saved `lwr_tick`/`upr_tick`.

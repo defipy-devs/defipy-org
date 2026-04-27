@@ -1,0 +1,87 @@
+---
+title: "CheckPoolHealth"
+description: "Pool-level health snapshot — TVL, reserves, LP count, top-LP concentration, fee activity. Read-only structured measurement; not a derivation."
+---
+
+`CheckPoolHealth` is a **read-only**, stateless primitive that takes a snapshot of pool-level health metrics. **Read-only structured measurement** — no derivation, no thresholds; that's [`DetectRugSignals`](/agentic-primitives/pool-health/detect-rug-signals/)'s job.
+
+V2 / V3 only — Balancer/Stableswap don't map cleanly to the pool-health framing (LP concentration is a different question for weighted/amplified pools).
+
+## Signature at a glance
+
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `CheckPoolHealth().apply(lp, recent_window=20)` |
+| Uniswap V3 | `CheckPoolHealth().apply(lp, recent_window=20)` *(some fields are V2-only)* |
+| Balancer | ❌ N/A |
+| Stableswap | ❌ N/A — depeg framing instead, see [`AssessDepegRisk`](/agentic-primitives/risk/assess-depeg-risk/) |
+
+## Common parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `lp` | `UniswapExchange` | V2 or V3 LP exchange. |
+| `recent_window` | `int` *(default `20`)* | V2-only — number of recent swaps to average for `fee_accrual_rate_recent`. Ignored on V3. |
+
+## What this measures
+
+- **`reserve0`, `reserve1`** — current pool reserves, human units
+- **`tvl_in_token0`** — total value locked, denominated in token0 (`reserve0 + reserve1 / spot_price`)
+- **`spot_price`** — current marginal price (token1 per token0)
+- **`total_liquidity`** — pool's total LP supply
+- **`collected_fees`** — cumulative fees, from the running accumulator (V2: per-swap history; V3: globalX128 accumulator)
+- **`num_swaps`** — V2-only count of swap events (V3 lacks per-swap history → `None`)
+- **`fee_accrual_rate_recent`** — V2-only fee rate over the last `recent_window` swaps (V3 → `None`)
+- **`num_lps`** — count of `liquidity_providers` excluding the V2 `MINIMUM_LIQUIDITY` burn sentinel address (`"0"`)
+- **`top_lp_share_pct`** — share of LP supply held by the largest holder (excluding the sentinel). `None` when the pool has no real LPs.
+- **`has_activity`** — V2 only: heuristic boolean from `num_swaps > 0` and recent fee accrual
+
+The measurement reads pool state directly. No fixed-points, no closed-form derivations — just a structured view of what the pool's already tracking. Calling this *math* would oversell what the code does.
+
+**V3 partial coverage.** Two fields are V2-only: `num_swaps` and `fee_accrual_rate_recent`. Per-swap history isn't part of the V3 exchange's interface; only the cumulative accumulator is. This is a real surface gap, not a planning issue.
+
+**MINIMUM_LIQUIDITY sentinel.** V2 burns a small initial liquidity to a sentinel address (`"0"`) on first mint to prevent share-price manipulation. The primitive *excludes* this sentinel from `liquidity_providers` counts and `top_lp_share_pct` — counting it would inflate apparent concentration.
+
+## Example
+
+```python
+from defipy import CheckPoolHealth
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+
+result = CheckPoolHealth().apply(lp_v2)
+
+print(f"version:                    {result.version}")
+print(f"pair:                       {result.token0_name}/{result.token1_name}")
+print(f"spot_price:                 {result.spot_price:.4f}")
+print(f"tvl_in_token0:              {result.tvl_in_token0:.4f}")
+print(f"num_swaps / num_lps:        {result.num_swaps} / {result.num_lps}")
+print(f"top_lp_share_pct:           {result.top_lp_share_pct}")
+print(f"has_activity:               {result.has_activity}")
+```
+
+<div class="nb-output">{`version:                    V2
+pair:                       ETH/DAI
+spot_price:                 100.0000
+tvl_in_token0:              2000.0000
+num_swaps / num_lps:        0 / 1
+top_lp_share_pct:           1.0
+has_activity:               False`}</div>
+
+A freshly-initialized pool: 0 swaps, 1 LP, that LP holds 100% of supply. `has_activity = False` because no fees have accrued.
+
+## How this composes
+
+- Composed *into* by [`DetectRugSignals`](/agentic-primitives/pool-health/detect-rug-signals/) — that primitive depth-chains over this one to apply threshold comparators and produce a count-based risk bucket.
+- Composed *into* by [`CompareFeeTiers`](/agentic-primitives/comparison/compare-fee-tiers/) for the per-tier TVL and fee-yield inputs.
+
+## See also
+
+- [`DetectRugSignals`](/agentic-primitives/pool-health/detect-rug-signals/) — threshold-based risk detector composed over this primitive
+- [`DetectFeeAnomaly`](/agentic-primitives/pool-health/detect-fee-anomaly/) — invariant-vs-contract consistency check (different question)
+- [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) — adjacent V3 measurement (range-status)
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- **MCP tool exposure:** Curated v2.0 toolset.
