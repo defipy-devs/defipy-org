@@ -1,6 +1,34 @@
 ---
-title: "DeFiPy"
-description: "Coming soon."
+title: DeFiPy
+description: A Python framework for analyzing and simulating DeFi positions across Uniswap V2, V3, Balancer, and Stableswap.
+template: splash
+hero:
+  tagline: A Python framework for analyzing and simulating DeFi positions across Uniswap V2, V3, Balancer, and Stableswap.
+  actions:
+    - text: Get started
+      link: /quick/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/defipy-devs/defipy
+      icon: external
+      variant: minimal
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What's inside
+
+<CardGrid stagger>
+	<Card title="Core Primitives" icon="puzzle">
+		Execution primitives that mutate pool state — mint, burn, swap, zap — abstracted across protocols. [Read more](/core-primitives/)
+	</Card>
+	<Card title="Agentic Primitives" icon="rocket">
+		Stateless, typed analytics that answer questions about positions, pools, and risk. Callable from notebooks or LLMs. [Read more](/agentic-primitives/)
+	</Card>
+	<Card title="Tutorials" icon="open-book">
+		Walk-throughs for Uniswap V2 and V3, Balancer, and Stableswap pools. [Browse tutorials](/tutorials/uniswapv2/uniswap-v2/)
+	</Card>
+	<Card title="DeFi Math" icon="document">
+		The math underpinning Uniswap V2/V3 invariants, Balancer weighted pools, and Stableswap amplification. [See math](/math/univ2-math/)
+	</Card>
+</CardGrid>

@@ -1,6 +1,139 @@
 ---
 title: "Execution"
-description: "Coming soon."
+description: "Execution primitives answer pre- and post-trade execution questions: \"how much slippage on this swap?\" and \"did I get sandwiched?\""
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+Execution primitives answer pre- and post-trade execution questions: *"how much slippage on this swap?"* and *"did I get sandwiched?"*
+
+Two primitives:
+- `CalculateSlippage` — pre-trade slippage and price-impact decomposition for a proposed swap
+- `DetectMEV` — post-trade comparison of actual on-chain output vs the invariant-implied output
+
+All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+
+## Setup
+
+```python
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+```
+
+## CalculateSlippage
+
+**Purpose.** Pre-trade slippage + price-impact decomposition. Reports execution price, slippage cost in token-out units, price impact, and the maximum trade size that stays under 1% slippage.
+
+**Signature.**
+
+```python
+CalculateSlippage().apply(
+    lp, token_in, amount_in,
+    lwr_tick=None, upr_tick=None,
+) -> SlippageAnalysis
+```
+
+`max_size_at_1pct` is `None` for V3 (tick-crossing math); `float` for V2 (closed-form). V3 trades that cross multiple ticks have approximate `price_impact_pct` (single-tick assumption).
+
+```python
+from defipy import CalculateSlippage
+
+# Quote a 10 ETH -> DAI swap.
+result = CalculateSlippage().apply(lp_v2, tokens["ETH"], amount_in=10.0)
+```
+
+```python
+print(f"spot_price:         {result.spot_price:.4f}")
+print(f"execution_price:    {result.execution_price:.4f}")
+print(f"slippage_pct:       {result.slippage_pct:.6f}")
+print(f"slippage_cost:      {result.slippage_cost:.4f}")
+print(f"price_impact_pct:   {result.price_impact_pct:.6f}")
+print(f"max_size_at_1pct:   {result.max_size_at_1pct:.4f}")
+```
+
+<div class="nb-output">{`spot_price:         100.0000
+execution_price:    98.7158
+slippage_pct:       0.012842
+slippage_cost:      12.8420
+price_impact_pct:   0.019675
+max_size_at_1pct:   7.0920`}</div>
+
+## DetectMEV
+
+**Purpose.** Post-trade MEV-extraction detector. Compares actual on-chain `actual_output` against the invariant-predicted theoretical output for the same trade — gap above the threshold flags `likely_frontrun`.
+
+**Signature.**
+
+```python
+DetectMEV(frontrun_threshold_bps=50.0).apply(
+    lp, token_in, amount_in, actual_output,
+    lwr_tick=None, upr_tick=None,
+) -> MEVDetectionResult
+```
+
+`direction` ∈ `{"underdelivered", "overdelivered", "matches"}`. `likely_frontrun` is `True` only when underdelivered AND the gap exceeds the threshold (overdelivery never flags). Caller is responsible for supplying `lp` at the correct historical state.
+
+First example: actual ≈ theoretical → not a frontrun.
+
+```python
+from defipy import DetectMEV
+
+result = DetectMEV().apply(
+    lp_v2,
+    token_in = tokens["ETH"],
+    amount_in = 10.0,
+    actual_output = 987.0,    # ≈ theoretical
+)
+print(f"theoretical_output:  {result.theoretical_output:.4f}")
+print(f"actual_output:       {result.actual_output:.4f}")
+print(f"extraction_bps:      {result.extraction_bps:.2f}")
+print(f"direction:           {result.direction}")
+print(f"likely_frontrun:     {result.likely_frontrun}")
+```
+
+<div class="nb-output">{`theoretical_output:  987.1580
+actual_output:       987.0000
+extraction_bps:      1.60
+direction:           underdelivered
+likely_frontrun:     False`}</div>
+
+Second example: 50 ETH worth less DAI than expected → frontrun flagged.
+
+```python
+result = DetectMEV().apply(
+    lp_v2,
+    token_in = tokens["ETH"],
+    amount_in = 10.0,
+    actual_output = 937.0,    # ~5% short
+)
+print(f"extraction_amount:   {result.extraction_amount:.4f}")
+print(f"extraction_bps:      {result.extraction_bps:.2f}")
+print(f"direction:           {result.direction}")
+print(f"likely_frontrun:     {result.likely_frontrun}")
+```
+
+<div class="nb-output">{`extraction_amount:   50.1580
+extraction_bps:      508.11
+direction:           underdelivered
+likely_frontrun:     True`}</div>
+
+## Protocol coverage
+
+| Protocol | Supported | Notes |
+|---|---|---|
+| Uniswap V2 | ✅ | Both primitives, full closed-form |
+| Uniswap V3 | ✅ | Both primitives; `max_size_at_1pct` is `None` (tick-crossing); `price_impact_pct` approximate for multi-tick trades |
+| Balancer | ❌ | LPQuote dispatch is Uniswap-only in v1 |
+| Stableswap | ❌ | LPQuote dispatch is Uniswap-only in v1 |
+
+## MCP tool exposure
+
+In the curated 10:
+
+- `CalculateSlippage`
+
+Not in the curated 10:
+
+- `DetectMEV` — post-trade forensic; agents typically want to ask this after observing a settled trade, which is a less common workflow than pre-trade slippage. Composable when needed.

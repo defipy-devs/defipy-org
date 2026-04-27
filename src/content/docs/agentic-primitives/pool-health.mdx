@@ -1,6 +1,171 @@
 ---
 title: "Pool Health"
-description: "Coming soon."
+description: "Pool Health primitives answer \"is this pool safe to deposit into?\" by surfacing on-chain liquidity, activity, and concentration signals."
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+Pool Health primitives answer *"is this pool safe to deposit into?"* by surfacing on-chain liquidity, activity, and concentration signals.
+
+Three primitives:
+- `CheckPoolHealth` — pool-level snapshot (TVL, reserves, LP count, fee activity)
+- `DetectRugSignals` — threshold-based rug-pull detector composed over `CheckPoolHealth`
+- `DetectFeeAnomaly` — V2-only invariant-vs-contract fee-discrepancy check via a synthetic test trade
+
+All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+
+## Setup
+
+```python
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
+```
+
+## CheckPoolHealth
+
+**Purpose.** Snapshot of pool-level health metrics for deposit-fitness analysis.
+
+**Signature.**
+
+```python
+CheckPoolHealth().apply(lp, recent_window=20) -> PoolHealth
+```
+
+Returns reserves, TVL (in token0), spot price, LP-count, top-LP concentration, and per-version activity metrics. V3 returns `num_swaps=None` and `fee_accrual_rate_recent=None` (no per-swap history available). `top_lp_share_pct` is `None` when the pool has no real LPs.
+
+```python
+from defipy import CheckPoolHealth
+
+result = CheckPoolHealth().apply(lp_v2)
+```
+
+```python
+print(f"version:                    {result.version}")
+print(f"pair:                       {result.token0_name}/{result.token1_name}")
+print(f"spot_price:                 {result.spot_price:.4f}")
+print(f"reserve0 / reserve1:        {result.reserve0:.2f} / {result.reserve1:.2f}")
+print(f"tvl_in_token0:              {result.tvl_in_token0:.4f}")
+print(f"num_swaps / num_lps:        {result.num_swaps} / {result.num_lps}")
+print(f"top_lp_share_pct:           {result.top_lp_share_pct}")
+print(f"has_activity:               {result.has_activity}")
+```
+
+<div class="nb-output">{`version:                    V2
+pair:                       ETH/DAI
+spot_price:                 100.0000
+reserve0 / reserve1:        1000.00 / 100000.00
+tvl_in_token0:              2000.0000
+num_swaps / num_lps:        0 / 1
+top_lp_share_pct:           1.0
+has_activity:               False`}</div>
+
+## DetectRugSignals
+
+**Purpose.** Threshold-based rug-pull signal detector composed over `CheckPoolHealth`. Emits a discrete risk level plus boolean signal flags.
+
+**Signature.**
+
+```python
+DetectRugSignals().apply(
+    lp,
+    lp_concentration_threshold=0.90,
+    tvl_floor=10.0,
+) -> RugSignalReport
+```
+
+`risk_level` buckets the count of triggered signals: `"low"` (0), `"medium"` (1), `"high"` (2), `"critical"` (3). The composed `pool_health` object is returned as a field for downstream inspection.
+
+```python
+from defipy import DetectRugSignals
+
+result = DetectRugSignals().apply(lp_v2)
+```
+
+```python
+print(f"risk_level:                    {result.risk_level}")
+print(f"signals_detected:              {result.signals_detected}")
+print(f"tvl_suspiciously_low:          {result.tvl_suspiciously_low}")
+print(f"single_sided_concentration:    {result.single_sided_concentration}")
+print(f"inactive_with_liquidity:       {result.inactive_with_liquidity}")
+print(f"details:                       {result.details}")
+```
+
+<div class="nb-output">{`risk_level:                    high
+signals_detected:              2
+tvl_suspiciously_low:          False
+single_sided_concentration:    True
+inactive_with_liquidity:       True
+details:                       ['single_sided_concentration: top LP holds 100.0% of supply (threshold 90.0%)', 'inactive_with_liquidity: pool has 2000.0000 TVL but zero swaps']`}</div>
+
+With aggressive thresholds (smaller pool, higher concentration tolerance):
+
+```python
+result = DetectRugSignals().apply(
+    lp_v2,
+    lp_concentration_threshold = 0.95,
+    tvl_floor = 5.0,
+)
+print(f"risk_level:        {result.risk_level}")
+print(f"signals_detected:  {result.signals_detected}")
+```
+
+<div class="nb-output">{`risk_level:        high
+signals_detected:  2`}</div>
+
+## DetectFeeAnomaly
+
+**Purpose.** Detect a discrepancy between the pool's stated fee tier and its actual swap output via a synthetic test trade. V2-only — V3/Balancer/Stableswap raise `ValueError`.
+
+**Signature.**
+
+```python
+DetectFeeAnomaly(discrepancy_threshold_bps=10.0).apply(lp, token_in, test_amount=None) -> FeeAnomalyResult
+```
+
+`test_amount` defaults to 1% of the input reserve. `direction` is `"pool_underdelivers"` or `"pool_overdelivers"`. A healthy AMM-correct pool returns `anomaly_detected=False` and `discrepancy_bps ≈ 0`.
+
+```python
+from defipy import DetectFeeAnomaly
+
+result = DetectFeeAnomaly().apply(lp_v2, tokens["ETH"])
+```
+
+```python
+print(f"stated_fee_bps:       {result.stated_fee_bps}")
+print(f"test_amount:          {result.test_amount}")
+print(f"theoretical_output:   {result.theoretical_output:.6f}")
+print(f"actual_output:        {result.actual_output:.6f}")
+print(f"discrepancy_bps:      {result.discrepancy_bps:.6e}")
+print(f"direction:            {result.direction}")
+print(f"anomaly_detected:     {result.anomaly_detected}")
+```
+
+<div class="nb-output">{`stated_fee_bps:       30
+test_amount:          10.0
+theoretical_output:   987.158034
+actual_output:        987.158034
+discrepancy_bps:      1.151658e-12
+direction:            pool_underdelivers
+anomaly_detected:     False`}</div>
+
+## Protocol coverage
+
+| Protocol | Supported | Notes |
+|---|---|---|
+| Uniswap V2 | ✅ | All three primitives |
+| Uniswap V3 | ⚠️ | `CheckPoolHealth` partial (`num_swaps`/`fee_accrual_rate_recent` None); `DetectRugSignals` `inactive_with_liquidity` always False; `DetectFeeAnomaly` raises |
+| Balancer | ❌ | `DetectFeeAnomaly` raises; others not yet ported |
+| Stableswap | ❌ | `DetectFeeAnomaly` raises; others not yet ported |
+
+## MCP tool exposure
+
+In the curated 10:
+
+- `CheckPoolHealth`
+- `DetectRugSignals`
+
+Not in the curated 10:
+
+- `DetectFeeAnomaly` — niche V2-only forensic check; LLMs rarely need invariant-vs-contract divergence as a first-pass tool. Composable when explicitly requested.

@@ -1,6 +1,123 @@
 ---
-title: "Break Even"
-description: "Coming soon."
+title: "Break-Even"
+description: "Break-Even primitives answer \"when am I made whole?\" — find the price at which fees offset IL, or the holding period at which fee income compensates current…"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+Break-Even primitives answer *"when am I made whole?"* — find the price at which fees offset IL, or the holding period at which fee income compensates current IL drag.
+
+Two primitives:
+- `FindBreakEvenPrice` — both alpha values where accumulated fees exactly offset IL
+- `FindBreakEvenTime` — linear projection of how long until current fees catch up to current IL
+
+All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+
+## Setup
+
+```python
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
+```
+
+## FindBreakEvenPrice
+
+**Purpose.** Find both alphas (price ratios vs entry) where accumulated `fee_income` exactly offsets impermanent loss. Useful for setting alert thresholds.
+
+**Signature.**
+
+```python
+FindBreakEvenPrice().apply(
+    lp, lp_init_amt, fee_income,
+    lwr_tick=None, upr_tick=None,
+) -> BreakEvenAlphas
+```
+
+V2/V3 supported (V3 via the range-scale factor). When fees are large enough that `sqrt(f_scaled) >= 1`, the upside break-even is `None` and `upside_hedged=True` (downside still exists for `f > 0`). Zero `fee_income` returns the degenerate case (both alphas = 1.0). Prices are in `token1/token0`.
+
+```python
+from defipy import FindBreakEvenPrice
+
+result = FindBreakEvenPrice().apply(
+    lp_v2,
+    lp_init_amt = 10000.0,
+    fee_income = 50.0,    # 50 ETH of accumulated fees
+)
+```
+
+```python
+print(f"break_even_alpha_down:   {result.break_even_alpha_down:.6f}")
+print(f"break_even_alpha_up:     {result.break_even_alpha_up:.6f}")
+print(f"break_even_price_down:   {result.break_even_price_down:.4f}")
+print(f"break_even_price_up:     {result.break_even_price_up:.4f}")
+print(f"fee_to_entry_ratio:      {result.fee_to_entry_ratio:.6f}")
+print(f"upside_hedged:           {result.upside_hedged}")
+```
+
+<div class="nb-output">{`break_even_alpha_down:   0.667907
+break_even_alpha_up:     1.658962
+break_even_price_down:   66.7907
+break_even_price_up:     165.8962
+fee_to_entry_ratio:      0.050000
+upside_hedged:           False`}</div>
+
+## FindBreakEvenTime
+
+**Purpose.** Estimate days (and blocks) until fee income compensates current IL drag at the *current* fee accrual rate. Simple linear projection; no rate uncertainty modeling.
+
+**Signature.**
+
+```python
+FindBreakEvenTime(blocks_per_day=7200).apply(
+    lp, lp_init_amt, entry_x_amt, entry_y_amt,
+    holding_period_days,
+    lwr_tick=None, upr_tick=None,
+) -> BreakEvenTime
+```
+
+V2/V3 only (delegates to `AnalyzePosition`). `diagnosis` ∈ `{"already_broken_even", "no_il_drag", "no_fee_income", "projected"}`. The `"no_fee_income"` branch sets `days_to_break_even` and `blocks_to_break_even` to `None`.
+
+```python
+from defipy import FindBreakEvenTime
+
+# ETH up 25% from entry, 30 days held — same scenario as the position-analysis pilot.
+result = FindBreakEvenTime().apply(
+    lp_v2,
+    lp_init_amt = 10000.0,
+    entry_x_amt = 1000.0,
+    entry_y_amt = 80000.0,
+    holding_period_days = 30.0,
+)
+```
+
+```python
+print(f"current_il_drag:         {result.current_il_drag:.4f}")
+print(f"fee_income_to_date:      {result.fee_income_to_date:.4f}")
+print(f"fee_rate_per_day:        {result.fee_rate_per_day:.4f}")
+print(f"days_to_break_even:      {result.days_to_break_even}")
+print(f"blocks_to_break_even:    {result.blocks_to_break_even}")
+print(f"already_broken_even:     {result.already_broken_even}")
+print(f"diagnosis:               {result.diagnosis}")
+```
+
+<div class="nb-output">{`current_il_drag:         11.1456
+fee_income_to_date:      211.1456
+fee_rate_per_day:        7.0382
+days_to_break_even:      0.0
+blocks_to_break_even:    0
+already_broken_even:     True
+diagnosis:               already_broken_even`}</div>
+
+## Protocol coverage
+
+| Protocol | Supported | Notes |
+|---|---|---|
+| Uniswap V2 | ✅ | Both primitives, closed-form |
+| Uniswap V3 | ✅ | Both primitives, with `lwr_tick`/`upr_tick` for the range-scale factor |
+| Balancer | ❌ | Weighted-pool break-even math not yet ported |
+| Stableswap | ❌ | Flat-curve regime makes break-even semantics ill-defined; not in v1 |
+
+## MCP tool exposure
+
+Neither primitive is in the curated 10. Break-even questions are downstream of position-analysis — agents typically derive break-even thresholds LLM-side after running `AnalyzePosition`. The category exists for the explicit request *"give me the break-even price"* without requiring the LLM to derive it.

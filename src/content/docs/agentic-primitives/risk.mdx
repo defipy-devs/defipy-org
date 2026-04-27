@@ -1,6 +1,129 @@
 ---
 title: "Risk"
-description: "Coming soon."
+description: "Risk primitives answer protocol-specific exposure questions that don't generalize across AMM families. Two primitives:"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+Risk primitives answer protocol-specific exposure questions that don't generalize across AMM families. Two primitives:
+
+- `CheckTickRangeStatus` — V3-only: where does the current price sit inside a position's tick range?
+- `AssessDepegRisk` — Stableswap-only: how much of a position is exposed to a stablecoin depeg?
+
+By design these are protocol-specific. The category is **not** a "missing-coverage" gap — these questions only make sense in their respective protocol.
+
+All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+
+## Setup
+
+```python
+from defipy.twin import MockProvider, StateTwinBuilder
+
+provider = MockProvider()
+builder = StateTwinBuilder()
+lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
+lp_sts = builder.build(provider.snapshot("usdc_dai_stableswap_A10"))
+sts_tokens = lp_sts.factory.token_from_exchange[lp_sts.name]
+```
+
+## CheckTickRangeStatus
+
+**Purpose.** Report where the current pool price sits inside a V3 position's tick range — *"is my range about to go out of range?"*
+
+**Signature.**
+
+```python
+CheckTickRangeStatus().apply(lp, lwr_tick, upr_tick) -> TickRangeStatus
+```
+
+V2 raises `ValueError`. Ticks need not align to `tick_spacing` (real positions do, but the primitive accepts any valid tick in `[MIN_TICK, MAX_TICK]`). `pct_to_lower` / `pct_to_upper` go negative when price has crossed that bound — a useful out-of-range signal.
+
+```python
+from defipy import CheckTickRangeStatus
+
+# Current ETH/DAI price = 100 → tick ≈ 46054.
+# Tight in-range position centered on current tick:
+result = CheckTickRangeStatus().apply(lp_v3, lwr_tick=45000, upr_tick=47000)
+```
+
+```python
+print(f"current_tick:       {result.current_tick}")
+print(f"lower / upper:      {result.lower_tick} / {result.upper_tick}")
+print(f"in_range:           {result.in_range}")
+print(f"pct_to_lower:       {result.pct_to_lower:.6f}")
+print(f"pct_to_upper:       {result.pct_to_upper:.6f}")
+print(f"range_width_pct:    {result.range_width_pct:.6f}")
+```
+
+<div class="nb-output">{`current_tick:       46054
+lower / upper:      45000 / 47000
+in_range:           True
+pct_to_lower:       0.100031
+pct_to_upper:       0.099213
+range_width_pct:    0.199245`}</div>
+
+## AssessDepegRisk
+
+**Purpose.** Quantify a stableswap position's exposure across N depeg scenarios (analytical, no simulation).
+
+**Signature.**
+
+```python
+AssessDepegRisk().apply(
+    lp, lp_init_amt, depeg_token,
+    depeg_levels=None, compare_v2=True,
+) -> DepegRiskAssessment
+```
+
+`depeg_token` is a token object from the pool's factory. Default `depeg_levels = [0.02, 0.05, 0.10, 0.20, 0.50]`. When a depeg level is unreachable for the pool's A, that scenario's `lp_value_at_depeg` / `il_pct` come back as `None` (the V2 comparison is still populated, since V2 has no reachability bound).
+
+```python
+from defipy import AssessDepegRisk
+
+result = AssessDepegRisk().apply(
+    lp_sts,
+    lp_init_amt = 100.0,
+    depeg_token = sts_tokens["USDC"],
+)
+```
+
+```python
+print(f"depeg_token:               {result.depeg_token}")
+print(f"protocol_type / n_assets:  {result.protocol_type} / {result.n_assets}")
+print(f"current_peg_deviation:     {result.current_peg_deviation}")
+print()
+print(f"{'depeg':>8}  {'il_pct':>12}  {'lp_value':>12}  {'v2_il':>12}")
+for s in result.scenarios:
+    il = f"{s.il_pct:.6f}" if s.il_pct is not None else "None"
+    val = f"{s.lp_value_at_depeg:.4f}" if s.lp_value_at_depeg is not None else "None"
+    v2 = f"{s.v2_il_comparison:.6f}" if s.v2_il_comparison is not None else "None"
+    print(f"{s.depeg_pct*100:>7.0f}%  {il:>12}  {val:>12}  {v2:>12}")
+```
+
+<div class="nb-output">{`depeg_token:               USDC
+protocol_type / n_assets:  stableswap / 2
+current_peg_deviation:     0.0
+
+   depeg        il_pct      lp_value         v2_il
+      2%     -0.000814       98.9194     -0.000051
+      5%     -0.004843       97.0278     -0.000329
+     10%     -0.016972       93.3877     -0.001386
+     20%          None          None     -0.006192
+     50%          None          None     -0.057191`}</div>
+
+## Protocol coverage
+
+| Protocol | Supported | Notes |
+|---|---|---|
+| Uniswap V2 | ❌ | No risk primitive in this category — V2 is range-less and pegs are not relevant |
+| Uniswap V3 | ✅ | `CheckTickRangeStatus` only |
+| Balancer | ❌ | No risk primitive in v1 |
+| Stableswap | ✅ | `AssessDepegRisk` only |
+
+## MCP tool exposure
+
+In the curated 10:
+
+- `AssessDepegRisk`
+
+Not in the curated 10:
+
+- `CheckTickRangeStatus` — high-traffic V3 question but easy to compose LLM-side from `lp.slot0.tick` and the position's saved `lwr_tick`/`upr_tick`.

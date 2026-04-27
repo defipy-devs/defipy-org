@@ -101,8 +101,18 @@ def fix_admonitions(text: str) -> str:
     return _ADMONITION_DIV.sub(repl, text)
 
 
-# Pandoc keeps Sphinx :ref: as inline code: `:ref:\`label\``.
-_REF_PATTERN = re.compile(r":ref:`([^`]+)`")
+# Pre-pandoc: pandoc treats :ref:`label` as a generic role and emits inline
+# code with the label only — losing the :ref: prefix entirely. Encode the
+# label into a unique sentinel before passing to pandoc, then restore as a
+# Markdown link after.
+_REF_PATTERN_RST = re.compile(r":ref:`([^`]+)`")
+_REF_SENTINEL = re.compile(r"XREFSENTINEL([A-Za-z0-9_]+)XREFEND")
+
+
+def encode_refs(rst_text: str) -> str:
+    return _REF_PATTERN_RST.sub(
+        lambda m: f"XREFSENTINEL{m.group(1)}XREFEND", rst_text
+    )
 
 
 def rewrite_refs(text: str) -> str:
@@ -110,11 +120,9 @@ def rewrite_refs(text: str) -> str:
         label = m.group(1)
         slug = REF_TO_SLUG.get(label)
         if slug:
-            # Best-effort link-text from the slug.
             return f"[{label}]({slug})"
-        # Unknown ref — leave a visible TODO so the converter doesn't silently swallow it.
         return f"<!-- TODO: ref `{label}` not in REF_TO_SLUG -->`{label}`"
-    return _REF_PATTERN.sub(repl, text)
+    return _REF_SENTINEL.sub(repl, text)
 
 
 # Strip ::: toctree containers, .. _label: anchors, .. _module-level metadata.
@@ -161,7 +169,7 @@ def derive_description(body: str) -> str | None:
 
 
 def convert(rst_text: str, fallback_title: str) -> str:
-    md = pandoc_to_gfm(rst_text)
+    md = pandoc_to_gfm(encode_refs(rst_text))
     md = strip_sphinx_only(md)
     md = rewrite_refs(md)
     md = fix_admonitions(md)
