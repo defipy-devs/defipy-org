@@ -1,71 +1,188 @@
 ---
 title: "Join"
-description: "Initialize a pool with both tokens. The first liquidity-providing operation a pool sees — sets initial reserves and mints LP tokens to the user."
+description: "Initialize a pool with starting liquidity. Mutating dispatch primitive — V2/V3 take token amounts, Balancer takes pool shares, Stableswap takes the amplification coefficient."
 ---
 
-```python
-class defipy.process.Join()
-```
+Initialize a pool with starting liquidity. `Join` is a **mutating** dispatch primitive — it routes to the protocol-specific mint operation underneath the unified interface. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
 
-Initialize a pool with both tokens. `Join` is the first liquidity-providing operation a pool sees: it sets the initial reserves and mints the initial LP-token supply to the user. After `Join`, the pool has a price and trades can happen.
+:::note[When to use `Join` vs `AddLiquidity`]
+Use `Join` to seed an empty pool (first mint, sets the initial reserves and price). Use [`AddLiquidity`](/api/primitive/core/add-liquidity/) to contribute to a pool that already has liquidity. Calling `Join` on a non-empty pool is undefined behavior; calling `AddLiquidity` on an empty pool fails because there is no price to match.
+:::
 
-Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+## Signature at a glance
 
-## Methods
+The `apply()` signature varies by protocol because the *meaning* of pool initialization varies by protocol. The first two parameters are common across all four; the trailing parameters are protocol-specific.
 
-### apply
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `Join().apply(lp, user_nm, amount0, amount1)` |
+| Uniswap V3 | `Join().apply(lp, user_nm, amount0, amount1, lwr_tick, upr_tick)` |
+| Balancer | `Join().apply(lp, user_nm, pool_shares)` |
+| Stableswap | `Join().apply(lp, user_nm, ampl_coeff)` |
 
-```python
-Join().apply(pool, user, amount0, amount1)
-```
+## Common parameters
 
-Add the initial token-0 and token-1 amounts to `pool` on behalf of `user`. The ratio of `amount0` to `amount1` sets the initial price.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance, typically returned by a `Factory.deploy(...)` call. |
-| `user` | `str` | User address (string identifier) credited with the initial LP tokens. |
-| `amount0` | `float` | Amount of `pool.token0` to deposit. |
-| `amount1` | `float` | Amount of `pool.token1` to deposit. |
+| `lp` | `Exchange` | Pool object returned by `factory.deploy(...)`. Must be empty (no prior `Join`). |
+| `user_nm` | `str` | Account name receiving the LP credit for this initialization. |
 
-**Returns**
+The remaining parameters depend on what initialization *means* for the protocol — see the per-protocol sections below.
 
-`None`. The pool is mutated in place — reserves are set, LP-token supply is minted and credited to `user`. Inspect `pool.summary()` or `pool.get_liquidity()` after the call.
+## Protocol Variants
 
-## Example
+### Uniswap V2
+
+Two-sided deposit at the pool's natural price. The two amounts you pass **define** the initial price ratio; subsequent traders observe `price = amount1 / amount0` based on what you seeded.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `amount0` | `float` | Amount of `tkn0` (the first token from `UniswapExchangeData`). |
+| `amount1` | `float` | Amount of `tkn1`. The ratio `amount1 / amount0` becomes the initial price. |
 
 ```python
-from defipy import *
+from defipy import (
+    ERC20, UniswapExchangeData, UniswapFactory, Join,
+)
 
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
 eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
+tkn = ERC20("TKN", "0x111")
+exch_data = UniswapExchangeData(
+    tkn0=eth, tkn1=tkn, symbol="LP", address="0x011",
+)
 factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
+lp = factory.deploy(exch_data)
 
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-lp.summary()
+Join().apply(lp, "user", 1000, 100000)
+# Initial price: 100 TKN per ETH
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1000.0, TKN = 100000.0
-Liquidity: 10000.0`}</div>
+Initial liquidity is `√(amount0 · amount1)`. V2 also burns a small `MINIMUM_LIQUIDITY` to a sentinel address on first mint to prevent share-price manipulation — treat that sentinel as out-of-band when counting LPs.
 
-## Notes
+### Uniswap V3
 
-- The implied price is `amount1 / amount0`. In the example above, the pool starts at 100 TKN per ETH.
-- Initial liquidity is `√(amount0 · amount1)` for V2 and Balancer-style geometric-mean pools. For V3 and Stableswap the formula differs but the principle is the same: the first deposit sets a baseline.
-- Uniswap V2 burns a small `MINIMUM_LIQUIDITY` to a sentinel address (`"0"`) on first mint to prevent share-price manipulation. Treat that sentinel as out-of-band when counting LPs.
+Two-sided deposit into a **specific tick range**. Concentrated liquidity has no meaning without a range, so V3 requires `lwr_tick` and `upr_tick` in addition to the two amounts. For a position equivalent to V2's full-range behavior, use `UniV3Utils.getMinTick(tick_spacing)` and `getMaxTick(tick_spacing)`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `amount0` | `float` | Amount of `tkn0`. |
+| `amount1` | `float` | Amount of `tkn1`. Together with `amount0`, sets the initial sqrt-price via `encodePriceSqrt(amount1, amount0)`. |
+| `lwr_tick` | `int` | Lower tick of the range. Must be a multiple of the pool's `tick_spacing`. |
+| `upr_tick` | `int` | Upper tick of the range. Must be `> lwr_tick` and a multiple of `tick_spacing`. |
+
+```python
+from defipy import (
+    ERC20, UniswapExchangeData, UniswapFactory, Join, UniV3Utils,
+)
+
+eth = ERC20("ETH", "0x09")
+tkn = ERC20("TKN", "0x111")
+tick_spacing = 60
+fee = 3000
+
+exch_data = UniswapExchangeData(
+    tkn0=eth, tkn1=tkn, symbol="LP", address="0x011",
+    version="V3", tick_spacing=tick_spacing, fee=fee,
+)
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exch_data)
+
+lwr_tick = UniV3Utils.getMinTick(tick_spacing)
+upr_tick = UniV3Utils.getMaxTick(tick_spacing)
+
+Join().apply(lp, "user", 1000, 100000, lwr_tick, upr_tick)
+# Full-range V3 position; behaves analogously to V2 within the range
+```
+
+:::caution[Common pitfall]
+`lwr_tick` and `upr_tick` default to `None` at the signature level but are unconditionally used in the V3 code path — passing `None` will raise. They must also be tick-aligned to the pool's `tick_spacing` (60 for the 30-bps fee tier, 10 for 5-bps, 200 for 100-bps).
+:::
+
+### Balancer
+
+Pool-shares-based initialization. Token amounts are **already loaded into the vault** before `Join` is called — `Join` issues the initial pool-share supply against those vault balances. The single positional argument is the number of pool shares to mint, not a token amount.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `pool_shares` | `float` | Initial pool-share supply minted to `user_nm`. The vault balances divided by `pool_shares` define the per-share token claim. |
+
+```python
+from defipy import (
+    ERC20, BalancerVault, BalancerExchangeData, BalancerFactory, Join,
+)
+
+dai = ERC20("DAI", "0x111")
+usdc = ERC20("USDC", "0x999")
+dai.deposit(None, 10000)
+usdc.deposit(None, 20000)
+
+vault = BalancerVault()
+vault.add_token(dai, 10)   # denormalized weight
+vault.add_token(usdc, 40)  # denormalized weight
+
+exch_data = BalancerExchangeData(vault=vault, symbol="BSP", address="0x3")
+factory = BalancerFactory("pool factory", "0x2")
+lp = factory.deploy(exch_data)
+
+Join().apply(lp, "user", 100)
+# 100 pool shares minted to "user"; per-share claim is the vault contents / 100
+```
+
+:::note[Why no token amounts here?]
+Balancer separates *vault funding* (loading tokens via `vault.add_token(token, weight)` after `token.deposit(...)`) from *pool initialization* (minting initial shares against the funded vault). `Join` performs only the second step. If your vault is empty when you call `Join`, you'll get a degenerate pool.
+:::
+
+### Stableswap
+
+Amplification-based initialization. Like Balancer, token amounts are loaded into the vault beforehand. The signature parameter is named `shares` at the dispatcher level, but it's passed straight to `lp.join_pool(vault, ampl_coeff, to)` — so semantically the third positional argument is the **amplification coefficient `A`**. Real-world tests and notebooks call it `AMPL` or `AMPL_COEFF`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `ampl_coeff` | `int` | Stableswap amplification coefficient. Higher `A` = flatter invariant near peg = lower slippage on small trades but sharper depeg risk past the basin. Typical values: 10 (cautious), 100 (Curve 3pool-class), 2000 (high-amplification stable basket). |
+
+```python
+from defipy import (
+    ERC20, StableswapVault, StableswapExchangeData,
+    StableswapFactory, Join,
+)
+
+dai = ERC20("DAI", "0x111", 18)
+usdc = ERC20("USDC", "0x222", 6)
+dai.deposit(None, 10000)
+usdc.deposit(None, 20000)
+
+vault = StableswapVault()
+vault.add_token(dai)
+vault.add_token(usdc)
+
+exch_data = StableswapExchangeData(vault=vault, symbol="LP", address="0x011")
+factory = StableswapFactory("Stableswap factory", "0x2")
+lp = factory.deploy(exch_data)
+
+AMPL_COEFF = 2000
+Join().apply(lp, "user", AMPL_COEFF)
+# Pool initialized at A=2000; LP supply derived from vault balances + invariant
+```
+
+:::caution[`A` is fixed at initialization in this implementation]
+The on-chain Curve contract supports `ramp_A` for governance-controlled amplification changes; the DeFiPy stableswap exchange treats `A` as immutable post-`Join`. If you need to model an `A` ramp, deploy a fresh pool at the new `A`.
+:::
+
+## How `Join` interacts with the rest of the pipeline
+
+After `Join`, the typical pipeline is:
+
+1. **`Join`** — initialize the pool (this primitive).
+2. [`Swap`](/api/primitive/core/swap/) — exercise the pool with trades to accrue fees / move price.
+3. **Analytics** ([Agentic Primitives](/agentic-primitives/)) — `AnalyzePosition`, `SimulatePriceMove`, `CheckPoolHealth`, etc. read the pool's state.
+4. [`AddLiquidity`](/api/primitive/core/add-liquidity/) / [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — additional LPs join or exit.
+5. [`SwapDeposit`](/api/primitive/core/swap-deposit/) / [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) *(V2/V3 only)* — single-sided deposit/withdrawal flows.
 
 ## See also
 
-- [`Swap`](/api/primitive/core/swap/) — once a pool is initialized, `Swap` exchanges one token for the other.
-- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — for adding liquidity to an *already-initialized* pool.
-- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — for joining an already-initialized pool
+- [`Swap`](/api/primitive/core/swap/) — for trading against the pool
+- [`LPQuote`](/api/primitive/core/lp-quote/) — read-only price and conversion queries against the pool `Join` produces
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — full V2 pipeline including `Join`
+- [Tutorials → Uniswap V3](/tutorials/uniswapv3/uniswap-v3/) — V3 pipeline with custom tick range
+- [The Primitive Contract](/primitive-contract/) — the cross-cutting invariants every dispatcher follows

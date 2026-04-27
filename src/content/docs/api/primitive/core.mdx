@@ -1,40 +1,45 @@
 ---
 title: "Core API"
-description: "Cross-protocol execution dispatchers — Join, Swap, AddLiquidity, RemoveLiquidity, SwapDeposit, WithdrawSwap, LPQuote — that mutate pool state across Uniswap V2, V3, Balancer, and Stableswap."
+description: "Cross-protocol execution dispatchers — Join, Swap, AddLiquidity, RemoveLiquidity, SwapDeposit, WithdrawSwap, LPQuote — across Uniswap V2, V3, Balancer, and Stableswap."
 ---
 
-Core Primitives are the cross-protocol execution dispatchers. They mutate pool state — initializing pools, swapping, adding and removing liquidity, and quoting — across Uniswap V2, V3, Balancer, and Stableswap through a single abstract interface.
+Core Primitives are the cross-protocol execution dispatchers. They mutate pool state — initializing pools, swapping, adding and removing liquidity — across Uniswap V2, V3, Balancer, and Stableswap through a single abstract interface, plus one read-only quoting class ([`LPQuote`](/api/primitive/core/lp-quote/)).
 
-For the conceptual overview and the dispatcher-design rationale, see [Core Primitives](/core-primitives/) under Concepts. This page is the API reference: every public class with its signature, parameters, and a runnable example.
+For the conceptual overview and the dispatcher-design rationale, see [Core Primitives](/core-primitives/) under Concepts. This page is the API reference index: every public class with its protocol-divergent shape and a link to the per-class page.
 
 ## Class index
 
-| Class | Purpose | V2 | V3 | Balancer | Stableswap |
+| Class | One-line shape | V2 | V3 | Balancer | Stableswap |
 |---|---|:---:|:---:|:---:|:---:|
-| [`Join`](/api/primitive/core/join/) | Initialize pool with both tokens | ✅ | ✅ | ✅ | ✅ |
-| [`Swap`](/api/primitive/core/swap/) | Swap exact `token_in` for `token_out` | ✅ | ✅ | ✅ | ✅ |
-| [`AddLiquidity`](/api/primitive/core/add-liquidity/) | Double-sided deposit | ✅ | ✅ | ✅ | ✅ |
-| [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) | Double-sided withdrawal | ✅ | ✅ | ✅ | ✅ |
-| [`SwapDeposit`](/api/primitive/core/swap-deposit/) | Single-sided deposit (zap-in) | ✅ | ✅ | ❌ | ❌ |
-| [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) | Single-sided withdrawal (zap-out) | ✅ | ✅ | ❌ | ❌ |
-| [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, LP↔token) | ✅ | ✅ | 🔜 | 🔜 |
+| [`Join`](/api/primitive/core/join/) | Seed an empty pool — V2/V3 take token amounts; Balancer takes pool shares; Stableswap takes the amplification coefficient. | ✅ | ✅ | ✅ | ✅ |
+| [`Swap`](/api/primitive/core/swap/) | Trade one token for another — V2/V3 only need `token_in` (binary pool); Balancer/Stableswap need both `token_in` and `token_out` (N-asset). | ✅ | ✅ | ✅ | ✅ |
+| [`AddLiquidity`](/api/primitive/core/add-liquidity/) | Single-token-in deposit into an initialized pool — dispatcher auto-balances V2/V3 via `lp.quote`; Balancer/Stableswap absorb imbalance via the invariant. | ✅ | ✅ | ✅ | ✅ |
+| [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) | Burn LP shares — V2/V3 return *both* tokens at pool ratio; Balancer/Stableswap return a single specified `token_out`. | ✅ | ✅ | ✅ | ✅ |
+| [`SwapDeposit`](/api/primitive/core/swap-deposit/) | Single-asset zap-in — closed-form for V2, numeric solve for V3. Bal/Ssw don't need it; their `AddLiquidity` is already single-asset. | ✅ | ✅ | ❌ | ❌ |
+| [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) | Single-asset zap-out — V2/V3 burn + auto-swap to one token. Bal/Ssw don't need it; their `RemoveLiquidity` already takes `token_out`. | ✅ | ✅ | ❌ | ❌ |
+| [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, reserve, amount, LP↔token). The cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.1. | ✅ | ✅ | 🔜 | 🔜 |
 
 ## Common contract
 
-Every Core primitive follows the DeFiPy contract:
+Every Core primitive follows the DeFiPy contract — with two real exceptions worth pinning down before you start scripting.
 
 ```python
 result = ClassName().apply(lp, ...args)
 ```
 
-- **Stateless construction.** `ClassName()` takes no parameters.
-- **`.apply()` does the work.** All operation arguments — pool, user, amounts, tokens — are passed to `.apply()`, not to the constructor.
-- **Mutates the pool.** Unlike Agentic primitives (read-only), Core primitives change `lp` state: reserves, LP-token supply, fee accumulators, etc.
-- **Returns operation-specific values.** Some return scalars (a swap output amount), some return structured outputs, some return `None` and rely on pool-state inspection.
+- **Construction is usually stateless,** but a few primitives accept *mode* parameters:
+  - [`Swap(kind=Proc.SWAPIN | Proc.SWAPOUT)`](/api/primitive/core/swap/) on Balancer toggles exact-output vs exact-input.
+  - [`AddLiquidity(kind=Proc.ADDTKN | Proc.ADDSHARES)`](/api/primitive/core/add-liquidity/) on Balancer toggles deposit-by-token-amount vs deposit-by-target-shares.
+  - [`RemoveLiquidity(kind=Proc.REMOVETKN | Proc.REMOVESHARES)`](/api/primitive/core/remove-liquidity/) on Balancer toggles withdraw-by-token-amount vs withdraw-by-shares.
+  - [`LPQuote(quote_opposing=True, include_fee=False)`](/api/primitive/core/lp-quote/) toggles passthrough vs opposing-token output and paper-value vs settlement-value.
+- **`.apply()` does the work.** Operation arguments — pool, user, amounts, tokens — are passed to `.apply()`, not to the constructor.
+- **Most Core primitives mutate `lp`.** [`LPQuote`](/api/primitive/core/lp-quote/) is the **read-only exception** — its methods return values without touching pool state.
+- **Returns are operation-specific.** Some return scalars (e.g. `Swap` output amount); some return dicts (`AddLiquidity` and V2/V3 `RemoveLiquidity`); some return `None` and rely on `pool.summary()` for inspection.
 
 ## See also
 
 - [Core Primitives](/core-primitives/) — narrative / conceptual overview
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants for every dispatcher
 - [Abstract Uniswap](/abstract-uniswap/) — the legacy abstract-interface page
 - [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — end-to-end runnable walkthrough of every Core primitive
 - [Protocol API](/api/protocol/uniswap-v2/) — protocol-specific factories and exchange classes that Core primitives dispatch to

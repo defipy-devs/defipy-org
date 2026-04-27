@@ -1,86 +1,132 @@
 ---
 title: "AddLiquidity"
-description: "Double-sided deposit. Provide one token; the matching amount of the other is calculated from current reserves to maintain the pool's price ratio."
+description: "Single-token-in liquidity contribution to an already-initialized pool. The matching token / share amount is computed by the dispatcher."
 ---
 
-```python
-class defipy.process.AddLiquidity()
-```
+Contribute liquidity to a pool that already has a price. `AddLiquidity` is a **mutating** dispatch primitive — every protocol accepts a single-token-in call shape, but the *meaning* of "what's calculated for you" varies. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
 
-Double-sided deposit into an initialized pool. The caller supplies one token amount; the matching amount of the other token is calculated from current reserves to maintain the pool's price ratio. LP tokens are minted to the user proportionally to their share of total liquidity.
+:::note[When to use `Join` vs `AddLiquidity`]
+[`Join`](/api/primitive/core/join/) initializes an empty pool — first mint, sets the initial reserves and price. `AddLiquidity` adds to a pool that's already initialized. Calling `AddLiquidity` on an empty pool fails because there's no price to match against.
+:::
 
-Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+:::note[When to use `AddLiquidity` vs `SwapDeposit`]
+[`SwapDeposit`](/api/primitive/core/swap-deposit/) (V2/V3 only) is the *zap-in* convenience — it does swap + deposit in one shot, computing the optimal swap fraction internally. Use it when you have a single token and want a balanced LP position. Use `AddLiquidity` when you already have the right amount of one token and just want the rest auto-balanced against the pool's current state.
+:::
 
-## Methods
+## Signature at a glance
 
-### apply
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `AddLiquidity().apply(lp, token_in, user_nm, amount_in)` |
+| Uniswap V3 | `AddLiquidity().apply(lp, token_in, user_nm, amount_in, lwr_tick, upr_tick)` |
+| Balancer | `AddLiquidity(kind=Proc.ADDTKN).apply(lp, token_in, user_nm, amount_in)` |
+| Stableswap | `AddLiquidity().apply(lp, token_in, user_nm, amount_in)` |
 
-```python
-AddLiquidity().apply(pool, token_in, user, amount_in)
-```
+## Common parameters
 
-Add liquidity to `pool` on behalf of `user` by depositing `amount_in` of `token_in`. The matching amount of the other token is computed and also debited from the user.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance to add liquidity to. |
-| `token_in` | `ERC20` | One side of the deposit. The other side is sized automatically. |
-| `user` | `str` | User address (string identifier) who provides liquidity and receives LP tokens. |
-| `amount_in` | `float` | Amount of `token_in` to deposit. |
+| `lp` | `Exchange` | Initialized pool object. Must already have liquidity (post-`Join`). |
+| `token_in` | `ERC20` | The token being deposited. Determines which side of the pair (V2/V3) or which vault asset (Balancer/Stableswap) the user is funding. |
+| `user_nm` | `str` | Account name credited with the resulting LP shares. |
+| `amount_in` | `float` | Quantity of `token_in` to deposit. The pool resolves what's needed for the *other* side internally. |
 
-**Returns**
+## Protocol Variants
 
-`None`. The pool's reserves grow, LP-token supply grows, and the user's LP-token balance grows. Inspect `pool.summary()` after the call.
+### Uniswap V2
 
-## Example
+Single-token-in, two-sided deposit. The dispatcher calls `lp.quote(amount_in, reserve_in, reserve_out)` to compute the matching amount of the other token at the current price ratio, then both balances go into `lp.add_liquidity(...)`. The user effectively pays both tokens, but only specifies one.
 
-### Add via token0 (other side calculated)
-
-```python
-from defipy import *
-
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-AddLiquidity().apply(lp, eth, user_nm, 10)
-lp.summary()
-```
-
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1010.0, TKN = 101000.0
-Liquidity: 10100.0`}</div>
-
-### Add via token1 (other side calculated)
+| Parameter | Type | Notes |
+|---|---|---|
+| (no extras) | — | Just the common parameters above. |
 
 ```python
-AddLiquidity().apply(lp, tkn, user_nm, 1000)
-lp.summary()
+from defipy import AddLiquidity
+
+# Add 10 ETH-worth — the matching DAI amount is computed from current reserves
+AddLiquidity().apply(lp, eth, "user", 10)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1010.0, TKN = 101000.0
-Liquidity: 10100.0`}</div>
+The user must already hold the matching amount of the other token; the dispatcher does not swap to obtain it. If you want swap-and-deposit in one shot, use [`SwapDeposit`](/api/primitive/core/swap-deposit/).
 
-## Notes
+Returns `{token0: balance0, token1: balance1}`.
 
-- **The pool's price doesn't change.** Both sides scale by the same proportion; the ratio of reserves is preserved. Adding liquidity is *not* a swap.
-- **For pools that haven't been initialized yet, use [`Join`](/api/primitive/core/join/).** `AddLiquidity` requires a non-zero LP supply.
-- For single-sided deposits — providing only one token — see [`SwapDeposit`](/api/primitive/core/swap-deposit/).
+### Uniswap V3
+
+Single-token-in deposit into a **specific tick range**. The dispatcher computes the in-range liquidity `L` from `amount_in` and the active sqrt-price (`UniV3Helper.calc_Lx` or `calc_Ly` depending on which side `token_in` is), then calls `lp.mint(user_nm, lwr_tick, upr_tick, L)`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `lwr_tick` | `int` | Lower tick of the range. Must be `tick_spacing`-aligned. |
+| `upr_tick` | `int` | Upper tick. Must be `> lwr_tick` and `tick_spacing`-aligned. |
+
+```python
+from defipy import AddLiquidity, UniV3Utils
+
+tick_spacing = 60
+lwr_tick = UniV3Utils.getMinTick(tick_spacing)
+upr_tick = UniV3Utils.getMaxTick(tick_spacing)
+
+AddLiquidity().apply(lp, eth, "user", 10, lwr_tick, upr_tick)
+```
+
+:::caution[Same tick rules as `Join`]
+Ticks default to `None` at the V2/V3 unified-signature level, but the V3 path uses them unconditionally — `None` will raise. The range you specify also determines what fees you'll later collect: tighter ranges = more concentrated fees but more risk of going out of range.
+:::
+
+### Balancer
+
+Single-asset deposit against a vault. The constructor `kind` parameter selects the deposit mode:
+
+- `Proc.ADDTKN` *(default)* — pass a token amount; pool computes the LP shares to mint via `lp.join_swap_extern_amount_in(amount_in, token_in, user_nm)`.
+- `Proc.ADDSHARES` — pass desired LP shares; pool computes the required token amount via `lp.join_swap_pool_amount_out(amount_in, token_in, user_nm)`. The third positional arg is now the *share* amount you want to receive.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| (no extras) | — | The constructor `kind` selects mode; `apply()` itself takes the common parameters only. |
+
+```python
+from defipy import AddLiquidity
+from balancerpy.enums import Proc
+
+# Default: deposit 1 ETH; receive whatever shares the pool issues
+AddLiquidity().apply(lp, eth, "user", 1)
+
+# Inverted: receive exactly 5 shares; pay whatever ETH is required
+AddLiquidity(kind=Proc.ADDSHARES).apply(lp, eth, "user", 5)
+```
+
+The pool internally handles the imbalance — that's why Balancer doesn't need a separate `SwapDeposit` primitive (see the [`SwapDeposit`](/api/primitive/core/swap-deposit/) page for the architectural reason).
+
+### Stableswap
+
+Single-asset deposit against a Stableswap vault. The dispatcher calls `lp.add_liquidity(amount_in, token_in, user_nm)`. There is no `kind` parameter on Stableswap's `AddLiquidity` constructor — token-amount-in is the only exposed mode.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| (no extras) | — | Common parameters only. |
+
+```python
+from defipy import AddLiquidity
+
+AddLiquidity().apply(lp, dai, "user", 1000)
+```
+
+Like Balancer, the pool absorbs the imbalance internally — single-asset adds are first-class on Stableswap.
+
+## How `AddLiquidity` interacts with the rest of the pipeline
+
+1. [`Join`](/api/primitive/core/join/) — pool must be initialized first.
+2. **`AddLiquidity`** — additional LPs contribute liquidity (this primitive).
+3. **Pre-deposit analytics** — [`OptimalDepositSplit`](/agentic-primitives/optimization/) (V2-only) projects the optimal split before depositing; [`EvaluateRebalance`](/agentic-primitives/optimization/) projects whether re-adding into a different range/composition is worth the cost.
+4. **Post-deposit analytics** — [`AnalyzePosition`](/agentic-primitives/position-analysis/) decomposes IL vs fees over time.
 
 ## See also
 
-- [`Join`](/api/primitive/core/join/) — first-time pool initialization.
-- [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — the inverse operation.
-- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided variant.
-- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.
+- [`Join`](/api/primitive/core/join/) — first-mint counterpart
+- [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — the inverse operation
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided V2/V3 deposit (does the swap-to-balance for you)
+- [`OptimalDepositSplit`](/agentic-primitives/optimization/) — non-mutating projection for V2 deposits
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants

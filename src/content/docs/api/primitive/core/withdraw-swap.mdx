@@ -1,86 +1,91 @@
 ---
 title: "WithdrawSwap"
-description: "Single-sided withdrawal (zap-out). Leave the pool with only one token. The primitive removes liquidity, swaps the unwanted side, and returns the desired token."
+description: "Single-asset withdrawal (zap-out) for V2/V3. Removes liquidity and swaps the unwanted side back into the desired token in one shot."
 ---
 
-```python
-class defipy.process.WithdrawSwap()
-```
+Exit a V2/V3 LP position into a single token. `WithdrawSwap` is a **mutating** dispatch primitive that removes liquidity and *also* swaps the unwanted side back into the requested token, so the user ends up holding only `token_out`. **V2/V3 only** — see the architectural reason below.
 
-Single-sided withdrawal, also called a *zap-out*. The caller wants to leave the pool holding only one token from the pair. The primitive performs an approximate 50/50 withdrawal, swaps the unwanted side back into the desired token, and returns the user's full position in the desired token.
+:::note[When to use `WithdrawSwap` vs `RemoveLiquidity`]
+[`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) on V2/V3 returns *both* tokens at the pool's current ratio. `WithdrawSwap` does the burn and chains a final swap so you exit holding only the asset you specified — useful when one of the two tokens isn't what you actually want to hold. On Balancer and Stableswap, `RemoveLiquidity` already supports single-asset withdrawal first-class, so `WithdrawSwap` isn't needed.
+:::
 
-Available on **Uniswap V2 and Uniswap V3** only. Balancer and Stableswap support is tracked for a later release.
+## Signature at a glance
 
-## Methods
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `WithdrawSwap().apply(lp, token_out, user_nm, amount_out)` |
+| Uniswap V3 | `WithdrawSwap().apply(lp, token_out, user_nm, amount_out, lwr_tick, upr_tick)` |
+| Balancer | ❌ Not supported — see "Why no Balancer/Stableswap section" below |
+| Stableswap | ❌ Not supported |
 
-### apply
+## Common parameters
 
-```python
-amount_out = WithdrawSwap().apply(pool, token_out, user, amount_out_target)
-```
-
-Withdraw the user's stake from `pool`, returning approximately `amount_out_target` of `token_out`. The primitive burns LP tokens, removes both sides, swaps the non-target side, and returns the target side.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance to withdraw from. V2 or V3 only. |
-| `token_out` | `ERC20` | The token the user wants to leave with. |
-| `user` | `str` | User address (string identifier) whose LP tokens are burned. |
-| `amount_out_target` | `float` | Target amount of `token_out` to receive. |
+| `lp` | `Exchange` | Initialized V2 or V3 pool with the user's LP shares to burn. |
+| `token_out` | `ERC20` | The single token the user wants to receive. |
+| `user_nm` | `str` | Account name whose LP shares are burned and who receives `token_out`. |
+| `amount_out` | `float` | Total quantity of `token_out` the user expects to walk away with (combined burn + swap). |
 
-**Returns**
+## Protocol Variants
 
-| Name | Type | Description |
+### Uniswap V2
+
+The dispatcher computes the optimal split between "burn proceeds" and "swap proceeds" via `_calc_univ2_withdraw_portion` (closed-form using the pool reserves and the V2 `0.997` fee multiplier), then executes:
+
+1. [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) for `p_out * amount_out` of `token_out` — returns both tokens.
+2. [`Swap`](/api/primitive/core/swap/) the *other* token's proceeds back into `token_out`.
+3. Combined output is `(swap result) + (RemoveLiquidity's token_out side)`.
+
+| Parameter | Type | Notes |
 |---|---|---|
-| `amount_out` | `float` | The actual amount of `token_out` returned to the user (slightly less than the target due to swap fees on the rebalancing leg). |
-
-## Example
-
-### Withdraw exact token0
+| (no extras) | — | Common parameters only. |
 
 ```python
-from defipy import *
+from defipy import WithdrawSwap
 
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-expected_amount_out = WithdrawSwap().apply(lp, eth, user_nm, 1)
-lp.summary()
+# Burn ETH/DAI LP shares; walk away with only DAI
+withdrawn = WithdrawSwap().apply(lp, dai, "user", 1000)
+# Returns the total DAI received (burn leg + swap leg combined)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 999.0, TKN = 100000.0
-Liquidity: 9994.991239989282`}</div>
+### Uniswap V3
 
-### Withdraw exact token1
+V3 uses the same two-step pattern, but the burn calculation goes through `SettlementLPToken` to compute the in-range L from the requested `amount_out` and the active sqrt-price.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `lwr_tick` | `int` | Lower tick of the position to withdraw from. Must match the original mint. |
+| `upr_tick` | `int` | Upper tick. |
 
 ```python
-expected_amount_out = WithdrawSwap().apply(lp, tkn, user_nm, 100)
-lp.summary()
+from defipy import WithdrawSwap
+
+WithdrawSwap().apply(lp, eth, "user", 1, lwr_tick, upr_tick)
+# Burns position liquidity inside [lwr_tick, upr_tick] and swaps the
+# non-eth side back into ETH; returns total ETH received.
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1000.0, TKN = 99900.0
-Liquidity: 9994.991239989282`}</div>
+:::caution[Tick range matters]
+The position you're exiting must already exist at `(lwr_tick, upr_tick)` — the dispatcher doesn't search across ranges. If you minted into multiple ranges, call `WithdrawSwap` once per range.
+:::
 
-## Notes
+### Why no Balancer/Stableswap section
 
-- The mechanism is: perform 50/50 withdrawal sized to the target → swap remaining 50% → return the consolidated target token.
-- The realized output is **less than** the target by approximately one swap fee (30 bps on V2; the configured tier on V3) — that's the cost of consolidating to a single side.
+`WithdrawSwap` exists because V2/V3's [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) returns *both* sides of the pair — getting back to a single asset requires an extra swap. **Balancer and Stableswap don't have this problem:** their `RemoveLiquidity` already supports specifying `token_out` and returning only that asset (`exit_swap_extern_amount_out` for Balancer, `lp.remove_liquidity(amount, token_out, user)` for Stableswap). The pool math handles the imbalance against the invariant directly.
+
+Calling `WithdrawSwap().apply(lp, ...)` against a `BalancerExchange` or `StableswapExchange` will fail at the V2/V3 version check (the dispatcher is V2/V3-specific). Use [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) on those protocols.
+
+## How `WithdrawSwap` interacts with the rest of the pipeline
+
+1. [`Join`](/api/primitive/core/join/) → [`AddLiquidity`](/api/primitive/core/add-liquidity/) — pool initialized and LP positions held.
+2. **Pre-exit analytics** — [`AnalyzePosition`](/agentic-primitives/position-analysis/) decomposes IL vs accumulated fees so the user can decide whether to exit; [`CalculateSlippage`](/agentic-primitives/execution/) projects the price impact of the internal swap leg.
+3. **`WithdrawSwap`** — burn + swap to single asset (this primitive).
 
 ## See also
 
-- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — the inverse operation (zap-in).
-- [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — double-sided variant.
-- [Tutorials → withdraw-swap](/tutorials/uniswapv2/withdraw-swap/) — runnable walkthrough.
+- [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) — the burn-only counterpart; also handles Balancer/Stableswap single-asset withdrawals
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — the inverse zap-in (V2/V3 only)
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/) — non-mutating IL/fee/PnL decomposition before exit
+- [Tutorials → Uniswap V2 — Withdraw & Swap](/tutorials/uniswapv2/withdraw-swap/) — runnable walkthrough
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants

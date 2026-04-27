@@ -1,86 +1,122 @@
 ---
 title: "RemoveLiquidity"
-description: "Double-sided withdrawal. Specify one token amount to receive; the matching amount of the other is calculated from current reserves."
+description: "Burn LP shares to withdraw underlying tokens. V2/V3 return both tokens at pool ratio; Balancer/Stableswap support single-asset withdrawals first-class."
 ---
 
-```python
-class defipy.process.RemoveLiquidity()
-```
+Withdraw underlying tokens by burning LP shares. `RemoveLiquidity` is a **mutating** dispatch primitive. The user-facing interface is uniform — specify a token and an amount — but what "amount" *means* differs by protocol.
 
-Double-sided withdrawal from a pool. The caller specifies one token amount to receive; the matching amount of the other is calculated from current reserves. The user's LP tokens are burned proportionally to their withdrawal.
+:::note[When to use `RemoveLiquidity` vs `WithdrawSwap`]
+`RemoveLiquidity` on V2/V3 returns **both** underlying tokens at the pool's current ratio. [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) (V2/V3 only) burns the LP and *also* swaps the unwanted side back into the requested token, so you exit into a single asset. On Balancer and Stableswap, single-asset withdrawal is already first-class via `RemoveLiquidity` itself — no separate primitive is needed.
+:::
 
-Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+## Signature at a glance
 
-## Methods
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `RemoveLiquidity().apply(lp, token, user_nm, amount)` |
+| Uniswap V3 | `RemoveLiquidity().apply(lp, token, user_nm, amount, lwr_tick, upr_tick)` |
+| Balancer | `RemoveLiquidity(kind=Proc.REMOVETKN).apply(lp, token_out, user_nm, amount_out)` |
+| Stableswap | `RemoveLiquidity().apply(lp, token_out, user_nm, amount_out)` |
 
-### apply
+## Common parameters
 
-```python
-amounts = RemoveLiquidity().apply(pool, token_out, user, amount_out)
-```
-
-Withdraw liquidity from `pool` on behalf of `user`, returning `amount_out` of `token_out`. The matching amount of the other token is computed and also returned to the user.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance to remove liquidity from. |
-| `token_out` | `ERC20` | One side of the withdrawal. The other side is sized automatically. |
-| `user` | `str` | User address (string identifier) whose LP tokens are burned. |
-| `amount_out` | `float` | Amount of `token_out` to receive. |
+| `lp` | `Exchange` | Initialized pool with active liquidity owned by `user_nm`. |
+| `token` | `ERC20` | The token side the user is anchoring the withdrawal against. |
+| `user_nm` | `str` | Account name whose LP shares are burned. |
+| `amount` | `float` | Quantity associated with `token`. **The semantics differ by protocol** — see the per-protocol sections below. |
 
-**Returns**
+:::caution[The `amount` semantics depend on the protocol]
+On V2/V3, `amount` is the quantity of the named `token` you want to receive on that side — and you also receive the matching amount of the *other* token (the dispatcher derives the LP burn from there). On Balancer/Stableswap, `amount` is the quantity of `token_out` you want to receive **as your only output** (or LP shares to burn, in `Proc.REMOVESHARES` mode). Read the variants below before scripting against this primitive.
+:::
 
-| Name | Type | Description |
+## Protocol Variants
+
+### Uniswap V2
+
+The user names a token side and the amount they want from that side. The dispatcher computes the LP-share burn from the pool's reserves and total liquidity, then calls `lp.remove_liquidity(...)` and returns *both* tokens at the current pool ratio.
+
+| Parameter | Type | Notes |
 |---|---|---|
-| `amounts` | `dict` | Dictionary mapping each token symbol to the amount the user received (e.g. `{'ETH': 999.0, 'TKN': 99900.0}`). |
-
-## Example
-
-### Remove via token0 (other side calculated)
+| `amount` | `float` | Amount of the named `token` to receive. The dispatcher computes `liq = amount × tot_liq / res_token` and the matching opposite-side amount via the pool ratio. |
 
 ```python
-from defipy import *
+from defipy import RemoveLiquidity
 
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-amounts = RemoveLiquidity().apply(lp, eth, user_nm, 999)
-print(amounts)
+# Burn enough LP to receive 5 ETH on the ETH side; receive matching DAI too
+out = RemoveLiquidity().apply(lp, eth, "user", 5)
+# out = {token0: amount0, token1: amount1} — both tokens
 ```
 
-<div class="nb-output">{`{'ETH': 999.0, 'TKN': 99900.0}`}</div>
+### Uniswap V3
 
-### Remove via token1 (other side calculated)
+Same single-token-anchored shape as V2, plus the position's tick range. The dispatcher computes the in-range liquidity to burn from `amount` and the active sqrt-price (`liq = amount * sqrt_P` or `amount / sqrt_P` depending on which side `token` is on), then calls `lp.burn(user_nm, lwr_tick, upr_tick, liq)`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `lwr_tick` | `int` | Lower tick of the position to withdraw from. Must match the range you originally minted into. |
+| `upr_tick` | `int` | Upper tick. |
 
 ```python
-RemoveLiquidity().apply(lp, tkn, user_nm, 100)
-lp.summary()
+from defipy import RemoveLiquidity
+
+RemoveLiquidity().apply(lp, eth, "user", 5, lwr_tick, upr_tick)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 999.0, TKN = 99900.0
-Liquidity: 9990.0`}</div>
+You also receive both tokens at the current sqrt-price ratio for that range (returned as `{token0: amount0, token1: amount1}`).
 
-## Notes
+### Balancer
 
-- **The pool's price doesn't change.** Both sides scale by the same proportion; reserve ratio is preserved.
-- **The user must hold enough LP tokens** to cover the implied burn. If they don't, the call raises.
-- For single-sided withdrawals — leaving with only one token — see [`WithdrawSwap`](/api/primitive/core/withdraw-swap/).
+Single-asset withdrawal is first-class. The constructor `kind` selects mode:
+
+- `Proc.REMOVETKN` *(default)* — pass `amount_out`, the token quantity you want; pool computes the LP-share burn via `lp.exit_swap_extern_amount_out(...)`.
+- `Proc.REMOVESHARES` — pass an LP-share amount to burn; pool computes the resulting token-out via `lp.exit_swap_pool_amount_in(...)`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `token_out` | `ERC20` | The single asset you want to receive. |
+| `amount_out` | `float` | Token-out quantity (REMOVETKN) or LP-shares to burn (REMOVESHARES). |
+
+```python
+from defipy import RemoveLiquidity
+from balancerpy.enums import Proc
+
+# Withdraw exactly 1 ETH worth out of an ETH/DAI/USDC pool
+RemoveLiquidity().apply(lp, eth, "user", 1)
+
+# Or burn a known share amount and let the pool compute the ETH-out
+RemoveLiquidity(kind=Proc.REMOVESHARES).apply(lp, eth, "user", 5)
+```
+
+### Stableswap
+
+Single-asset withdrawal is also first-class on Stableswap. There is no `kind` parameter — only token-out-amount mode is exposed. The dispatcher calls `lp.remove_liquidity(amount_out, token_out, user_nm)`.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `token_out` | `ERC20` | The single asset you want to receive. |
+| `amount_out` | `float` | Quantity of `token_out` to receive. |
+
+```python
+from defipy import RemoveLiquidity
+
+RemoveLiquidity().apply(lp, dai, "user", 1000)
+```
+
+Like Balancer, the pool absorbs the imbalance against the invariant — that's why Stableswap doesn't need a separate `WithdrawSwap` primitive (see the [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) page for the architectural reason).
+
+## How `RemoveLiquidity` interacts with the rest of the pipeline
+
+1. [`Join`](/api/primitive/core/join/) → [`AddLiquidity`](/api/primitive/core/add-liquidity/) — pool initialized and LPs deposited.
+2. **Pre-withdrawal analytics** — [`AnalyzePosition`](/agentic-primitives/position-analysis/) decomposes the LP's IL vs accumulated fees so the user can decide whether *now* is the right time to exit.
+3. **`RemoveLiquidity`** — burn LP, take the proceeds (this primitive).
+4. **Compare alternatives** — [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) (V2/V3 only) for single-asset exits without an intermediate manual swap.
 
 ## See also
 
-- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — the inverse operation.
-- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — single-sided variant.
-- [`Join`](/api/primitive/core/join/) — pool initialization.
-- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough.
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — the inverse operation
+- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — single-asset V2/V3 withdrawal
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/) — non-mutating IL/fee/PnL decomposition
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — full pipeline walkthrough
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants

@@ -1,94 +1,133 @@
 ---
 title: "Swap"
-description: "Swap exact `token_in` for `token_out` on an initialized pool. Cross-protocol: dispatches to V2, V3, Balancer, or Stableswap."
+description: "Exchange one token for another. Mutating dispatch primitive — V2/V3 take only token_in (binary pools), Balancer/Stableswap take both token_in and token_out (N-asset pools)."
 ---
 
-```python
-class defipy.process.Swap()
-```
+Exchange one token for another at the pool's current price. `Swap` is a **mutating** dispatch primitive — it routes to the protocol-specific exact-input swap underneath the unified interface. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
 
-Swap exact `token_in` for `token_out` on an initialized pool. The output amount is determined by the pool's invariant — constant product for V2, concentrated-liquidity ticks for V3, weighted geometric mean for Balancer, the amplification-adjusted curve for Stableswap.
+:::note[When to use `Swap` vs `SwapDeposit`]
+Use `Swap` when you just want to trade one token for another. Use [`SwapDeposit`](/api/primitive/core/swap-deposit/) (V2/V3 only) when you want to convert a single-sided token holding into a balanced LP position in one shot — it does the swap *and* the deposit, computing the optimal swap fraction internally.
+:::
 
-Cross-protocol: dispatches to the underlying protocol implementation. Available on **Uniswap V2, Uniswap V3, Balancer, and Stableswap**.
+## Signature at a glance
 
-## Methods
+V2/V3 are **binary pools** (exactly two assets), so the output token is implicit — only `token_in` is named. Balancer and Stableswap are **N-asset pools** (`N ≥ 2`), so both `token_in` and `token_out` must be named explicitly.
 
-### apply
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `Swap().apply(lp, token_in, user_nm, amount_in)` |
+| Uniswap V3 | `Swap().apply(lp, token_in, user_nm, amount_in, sqrt_price_limit=None)` |
+| Balancer | `Swap().apply(lp, token_in, token_out, user_nm, amount)` |
+| Stableswap | `Swap().apply(lp, token_in, token_out, user_nm, amount)` |
 
-```python
-out = Swap().apply(pool, token_in, user, amount_in)
-```
+## Common parameters
 
-Execute the swap. Pool reserves update; the user's balance of `token_out` increases by the returned amount.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance to swap on. |
-| `token_in` | `ERC20` | The token being swapped *in*. The other side of the pair is the token being swapped out. |
-| `user` | `str` | User address (string identifier) executing the swap. |
+| `lp` | `Exchange` | Initialized pool object. Must already have liquidity (post-`Join`). |
+| `token_in` | `ERC20` | Token the user is handing over. Direction of the trade is determined by which token is named here. |
+| `user_nm` | `str` | Account name debited for `token_in` and credited for the output token. |
+
+The trailing parameters and the input-amount conventions diverge per protocol — see below.
+
+## Protocol Variants
+
+### Uniswap V2
+
+Exact-input swap on a constant-product pool. The output token is the *other* token in the pair (binary pool, so it's implicit). Returns the integer-floored output amount.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `amount_in` | `float` | Amount of `token_in` swapped into the pool. The output amount is computed via `lp.get_amount_out(...)` and floored to an integer in V2. |
+
+```python
+from defipy import Swap
+
+# Swap 1000 DAI for ETH
+out = Swap().apply(lp, dai, "user", 1000)
+# `out` is the floored amount of ETH received
+```
+
+### Uniswap V3
+
+Exact-input swap inside the pool's active range. Direction is inferred from whether `token_in` matches `token0` or `token1` — `swapExact0For1` or `swapExact1For0` is invoked accordingly. The optional `sqrt_price_limit` is the V3 slippage-protection parameter (passing `None` disables it).
+
+| Parameter | Type | Notes |
+|---|---|---|
 | `amount_in` | `float` | Amount of `token_in` to swap. |
+| `sqrt_price_limit` | `int` *(optional)* | Lower (or upper) bound on the post-swap sqrt-price, in V3's Q64.96 fixed-point format. `None` means no limit. |
 
-**Returns**
+```python
+from defipy import Swap
 
-| Name | Type | Description |
+# Same call shape as V2 — V3 is figured out from lp.version
+Swap().apply(lp, tkn, "user", 1000)
+
+# To enforce a sqrt-price limit, pass it as the fifth positional arg.
+```
+
+:::caution[Direction comes from `token_in`, not from the pool]
+The pool doesn't know "which way" the trade goes; it knows what you handed over. Pass the token you're spending as `token_in` — the other token of the pair is what you receive. This is identical for V2 and V3, but easy to mis-specify when you're scripting.
+:::
+
+### Balancer
+
+Exact-input *or* exact-output swap on an N-asset weighted pool. Because Balancer pools may hold more than two tokens, both `token_in` and `token_out` must be named — the pool can't infer direction. The `kind` constructor parameter selects the swap mode:
+
+- `Proc.SWAPOUT` *(default)* — exact-input. `amount` is `token_in` quantity entering the pool.
+- `Proc.SWAPIN` — exact-output. `amount` is `token_out` quantity leaving the pool.
+
+| Parameter | Type | Notes |
 |---|---|---|
-| `out` | `float` | Amount of `token_out` the user receives, net of pool fees. |
-
-## Example
-
-### Swap token1 for token0
+| `token_out` | `ERC20` | Token the user receives. Required because the pool has `N ≥ 2` assets. |
+| `amount` | `float` | Quantity of `token_in` (SWAPOUT) or `token_out` (SWAPIN), per the constructor mode. |
 
 ```python
-from defipy import *
+from defipy import Swap
+from balancerpy.enums import Proc
 
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
+# Exact-input: swap exactly 10 DAI for whatever USDC comes out
+Swap().apply(lp, dai, usdc, "user", 10)
 
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-lp.summary()
-
-out = Swap().apply(lp, tkn, user_nm, 1000)
-lp.summary()
+# Exact-output: receive exactly 0.5 ETH; pay whatever DAI is required
+Swap(kind=Proc.SWAPIN).apply(lp, dai, eth, "user", 0.5)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1000.0, TKN = 100000.0
-Liquidity: 10000.0
+:::note[Why two tokens?]
+A Balancer weighted pool can be 2/3/4/8-asset. With three or more tokens, naming `token_in` alone leaves the destination ambiguous, so both must be specified. The same constraint applies to Stableswap below.
+:::
 
-Exchange ETH-TKN (LP)
-Reserves: ETH = 990.1284196560293, TKN = 101000.0
-Liquidity: 10000.0`}</div>
+### Stableswap
 
-### Swap token0 for token1
+Exact-input swap on a Stableswap pool with amplification coefficient `A`. Like Balancer, both tokens must be named. There is no SWAPIN mode on Stableswap — only exact-input is exposed.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `token_out` | `ERC20` | Token the user receives. |
+| `amount` | `float` | Amount of `token_in` entering the pool. |
 
 ```python
-out = Swap().apply(lp, eth, user_nm, 10)
-lp.summary()
+from defipy import Swap
+
+# Stableswap is exact-input only; trades close to peg behave near-linearly,
+# trades far from peg encounter the depeg basin.
+Swap().apply(lp, dai, usdc, "user", 10)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1010.0, TKN = 99012.84196560294
-Liquidity: 10000.0`}</div>
+For analyzing depeg risk before swapping, see [`AssessDepegRisk`](/agentic-primitives/risk/) — it quantifies exposure as the trade pushes the pool away from the peg.
 
-## Notes
+## How `Swap` interacts with the rest of the pipeline
 
-- **Fee handling is protocol-specific.** V2 hard-codes 30 bps inside `get_amount_out`. V3 reads the fee tier from `pool.fee` (in pips: 100 = 0.01%, 500 = 0.05%, 3000 = 0.3%, 10000 = 1%). Balancer's `SWAP_FEE` is 0.25%. Stableswap fees are configured per-pool.
-- **Slippage is not capped by `Swap` itself.** If you need slippage protection, compute the expected output via [`LPQuote`](/api/primitive/core/lp-quote/) first and verify the realized output against your tolerance after the call.
-- **`Swap` is symmetric.** Reversing `token_in` reverses the direction; pool state behaves consistently.
-- **Trading LP tokens.** Some primitives accept an LP-token instance for `token_in` when the pool is layered (an LP token of one pool acting as a token in another). The example tutorial covers this case.
+1. [`Join`](/api/primitive/core/join/) — initialize the pool.
+2. **`Swap`** — exercise the pool with trades (this primitive). Each swap accrues fees and moves the spot price.
+3. **Pre-trade analytics** ([Agentic Primitives](/agentic-primitives/)) — [`CalculateSlippage`](/agentic-primitives/execution/) for the price-impact and slippage of a proposed swap; [`DetectMEV`](/agentic-primitives/execution/) for sandwich-risk exposure.
+4. **Post-trade analytics** — [`AnalyzePosition`](/agentic-primitives/position-analysis/) to decompose any LP's resulting IL vs fee income.
 
 ## See also
 
-- [`LPQuote`](/api/primitive/core/lp-quote/) — non-mutating quote of a swap before executing it.
-- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided deposit; internally uses a swap to balance the deposit.
-- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough including LP-token swap cases.
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) — swap + deposit in one step (V2/V3 only)
+- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — burn LP + swap to a single token (V2/V3 only)
+- [`LPQuote`](/api/primitive/core/lp-quote/) — read-only quoting for a prospective swap
+- [`CalculateSlippage`](/agentic-primitives/execution/) — non-mutating projection of a swap's price impact
+- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants

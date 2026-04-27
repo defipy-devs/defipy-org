@@ -1,167 +1,146 @@
 ---
 title: "LPQuote"
-description: "Read-only quoting: token prices, swap-output forecasts, and LP↔token conversion. Cross-protocol, never mutates state."
+description: "Read-only price, reserve, and LP↔token conversion queries. The recommended cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.1."
 ---
 
-```python
-class defipy.cpt.quote.LPQuote(include_fee=True)
-```
+`LPQuote` is the read-only quoting class for V2/V3 LP state. Unlike the other Core primitives, it doesn't follow the `ClassName().apply(...)` shape — it exposes a small set of named methods, each answering a specific question about an existing pool. **It never mutates state.**
 
-Read-only quoting. `LPQuote` answers the questions a UI or analytics layer asks before executing a swap or computing a position value: what's the spot price, what would I receive for this swap, what's my LP balance worth, what would 1 token mint in LP tokens?
+:::note[LPQuote is the cross-protocol entry point for reads]
+`lp.get_amount_out(...)` and `lp.get_reserve(...)` are *V2-specific* — they don't exist on `UniswapV3Exchange` (V3 has `get_virtual_reserve` instead, and routes amount calculations through `UniV3Helper`). Calling them against a V3 pool raises `AttributeError`. `LPQuote` dispatches on `lp.version` internally, so the same call works on both V2 and V3. **Always reach for `LPQuote` over direct `lp.*` calls when writing cross-protocol code.**
+:::
 
-`LPQuote` is the **nucleus of cross-protocol routing** in DeFiPy. Every meaningful read — spot price, reserve access, LP↔token conversion, trade simulation — ultimately routes through it. When other primitives need a fee-aware quote, they call `LPQuote` rather than `pool.get_amount_out` directly, because the latter is V2-specific.
-
-Available on **Uniswap V2 and Uniswap V3**. Balancer and Stableswap support is in development.
-
-## Constructor parameters
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `include_fee` | `bool` | `True` | Whether returned amounts account for the pool's swap fee. Set `False` for fee-free invariant reads (e.g. when computing IL with a fee-free spot ratio, the way `BalancerImpLoss` does internally). |
-
-## Methods
-
-### get_price
+## Constructor
 
 ```python
-price = LPQuote().get_price(pool, token_in)
+LPQuote(quote_opposing=True, include_fee=False)
 ```
-
-Spot price of `token_in` denominated in the other token of the pair. Polymorphic across V2 and V3 — returns the raw reserve ratio, no fee applied.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool to read. |
-| `token_in` | `ERC20` | The token whose price you want. |
+| `quote_opposing` | `bool` | When `True` (default), `get_amount` returns the *opposing-token* amount. When `False`, it returns the input amount unchanged — useful as a passthrough in code that conditionally quotes. |
+| `include_fee` | `bool` | V2-only. When `True`, `get_amount` uses fee-aware `lp.get_amount_out0/1`. When `False` (default), it uses the no-fee proportional formula `(amount_in * res_other) / res_in` — the **paper value**. See the paper-vs-settlement note below. |
 
-**Returns**: `float` — units of the other token per unit of `token_in`.
+## Method index
 
-### get_amount
+`LPQuote` exposes seven methods, grouped here by the question each one answers:
 
-```python
-amount_out = LPQuote(include_fee=True).get_amount(pool, token_in, amount_in)
-```
+| Question | Method | Returns |
+|---|---|---|
+| What's the spot price of `tkn`? | `get_price(lp, tkn, lwr_tick=None, upr_tick=None)` | `float` — `tkn` price in opposing-token units |
+| How much of `tkn` is in the pool? | `get_reserve(lp, tkn, lwr_tick=None, upr_tick=None)` | `float` — V2 reserve or V3 virtual reserve |
+| Token amount → opposing-token amount? | `get_amount(lp, tkn, amount_in, lwr_tick=None, upr_tick=None)` | `float` — opposing-token output |
+| LP shares → opposing-token amount? | `get_amount_from_lp(lp, tkn, amount_lp_in, lwr_tick=None, upr_tick=None)` | `float` — opposing-token equivalent |
+| Token amount → LP shares? | `get_lp_from_amount(lp, tkn, amount_in, lwr_tick=None, upr_tick=None)` | `float` — LP-share equivalent |
+| Token amount → liquidity (raw `L`)? | `get_liquidity(lp, tkn, amount_in)` | `float` — pool-share-scaled liquidity |
+| What's the other token in the pair? | `get_opposing_token(lp, tkn)` | `ERC20` |
 
-Forecast the swap output for swapping `amount_in` of `token_in` into the pool. With `include_fee=True` (the default), returns the same value [`Swap`](/api/primitive/core/swap/) would produce — useful for slippage previews.
+## Common parameters
 
 | Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool to read. |
-| `token_in` | `ERC20` | The token being swapped in. |
-| `amount_in` | `float` | Amount of `token_in`. |
+| `lp` | `Exchange` | Initialized V2 or V3 pool with active liquidity. |
+| `tkn` | `ERC20` | The "input" or "anchor" token for the quote. The opposing token is inferred from the pool. |
+| `lwr_tick`, `upr_tick` | `int` *(optional, V3 only)* | The tick range to quote against. Required for V3 amount queries; defaulted to `None` for V2 calls. |
 
-**Returns**: `float` — the amount of the other token a user would receive.
+The remaining parameter on each method is the input amount, with semantics named in the method (token amount, LP-share amount, etc.).
 
-### get_amount_from_lp
+## Per-method detail
 
-```python
-amount = LPQuote().get_amount_from_lp(pool, token, amount_lp)
-```
+### `get_price(lp, tkn, lwr_tick=None, upr_tick=None)`
 
-Convert an LP-token balance into a token-denominated amount. Useful for "what's my LP position worth in ETH" displays.
-
-The `include_fee=False` form returns settlement value via an internal `RebaseIndexToken` swap; this is *scale-dependent* and crashes with `ZeroDivisionError` on V3 at 100% pool ownership — prefer the paper-share interpretation (linear share of reserves) for analytics primitives.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `pool` | exchange | Pool to read. |
-| `token` | `ERC20` | The token to denominate the value in. |
-| `amount_lp` | `float` | LP-token amount to convert. |
-
-**Returns**: `float` — equivalent amount of `token`.
-
-### get_lp_from_amount
+Spot price of `tkn`, expressed in opposing-token units. Computed as `reserve_opposing / reserve_tkn`. Returns `0` if either reserve is zero (degenerate pool).
 
 ```python
-amount_lp = LPQuote().get_lp_from_amount(pool, token, amount_tkn)
+from defipy import LPQuote
+
+# V2: price of ETH in DAI
+price = LPQuote().get_price(lp, eth)
+
+# V3: same call, ticks not required because pool's slot0 carries the spot
+price = LPQuote().get_price(lp_v3, eth)
 ```
 
-The inverse of `get_amount_from_lp` — convert a token amount into the equivalent LP-token amount.
+### `get_reserve(lp, tkn, lwr_tick=None, upr_tick=None)`
 
-| Parameter | Type | Description |
-|---|---|---|
-| `pool` | exchange | Pool to read. |
-| `token` | `ERC20` | The token whose amount you're converting from. |
-| `amount_tkn` | `float` | Token amount to convert. |
-
-**Returns**: `float` — equivalent amount of LP tokens.
-
-## Example
-
-### Setup
+The amount of `tkn` in the pool. **V2** returns the actual reserve in human units; **V3** returns the *virtual reserve* — the amount the pool would hold if all in-range liquidity were collapsed into a constant-product position at the current sqrt-price. Tick-range arguments are accepted but only used by indexed-token paths (when `tkn.type == 'index'`).
 
 ```python
-from defipy import *
-
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
+reserve = LPQuote().get_reserve(lp, eth)
+# V3 virtual reserve when lp is a UniswapV3Exchange
+reserve = LPQuote().get_reserve(lp_v3, eth, lwr_tick, upr_tick)
 ```
 
-### Spot prices (no fee)
+### `get_amount(lp, tkn, amount_in, lwr_tick=None, upr_tick=None)`
+
+How much of the **opposing** token would `amount_in` of `tkn` exchange for? V2 uses either the no-fee proportional formula or the fee-aware `lp.get_amount_out0/1` depending on `include_fee`. V3 routes through `UniV3Helper().quote(lp, tkn, amount_in, lwr_tick, upr_tick)` — ticks are required.
 
 ```python
-p_eth = LPQuote().get_price(lp, eth)
-p_tkn = LPQuote().get_price(lp, tkn)
-print(f'1 ETH = {p_eth} TKN')
-print(f'1 TKN = {p_tkn} ETH')
+# V2 paper value (no fee)
+out = LPQuote().get_amount(lp, dai, 1000)
+
+# V2 settlement value (fee-aware)
+out = LPQuote(include_fee=True).get_amount(lp, dai, 1000)
+
+# V3 — ticks required
+out = LPQuote().get_amount(lp_v3, dai, 1000, lwr_tick, upr_tick)
 ```
 
-<div class="nb-output">{`1 ETH = 100.0 TKN
-1 TKN = 0.01 ETH`}</div>
+:::caution[Paper value vs settlement value]
+`include_fee=False` (default) returns the **paper** value — what the swap would yield in a frictionless world. `include_fee=True` returns the **settlement** value through the actual pool's fee-aware path. The difference matters: `LPQuote(include_fee=False)` runs an internal `RebaseIndexToken` swap when called on indexed tokens (via `get_amount_from_lp`), which is **scale-dependent** — at 100% pool ownership on V3, this can raise `ZeroDivisionError`. Default to paper value unless you specifically need settlement semantics.
+:::
 
-### Swap-output forecast (fee-aware)
+### `get_amount_from_lp(lp, tkn, amount_lp_in, lwr_tick=None, upr_tick=None)`
+
+Given a quantity of LP shares, return the equivalent amount of the **opposing** token (or, if `quote_opposing=False`, the equivalent amount of `tkn` itself). Composes `RebaseIndexToken` for the LP→token leg, then `get_amount` for the token→opposing-token leg.
 
 ```python
-amt_eth = LPQuote(include_fee=True).get_amount(lp, eth, 1)
-amt_tkn = LPQuote(include_fee=True).get_amount(lp, tkn, 1)
-print(f'1 ETH would swap to {amt_tkn} TKN')
-print(f'1 TKN would swap to {amt_eth} ETH')
+opposing_amt = LPQuote().get_amount_from_lp(lp, eth, 100)
+# 100 LP shares; how much DAI does that translate to?
 ```
 
-<div class="nb-output">{`1 ETH would swap to 0.009969900600091019 TKN
-1 TKN would swap to 99.60069810399033 ETH`}</div>
+### `get_lp_from_amount(lp, tkn, amount_in, lwr_tick=None, upr_tick=None)`
 
-### LP-token to underlying
+The inverse of `get_amount_from_lp`. Given a token amount, return the LP-share quantity it corresponds to via `SettlementLPToken().apply(...)`.
 
 ```python
-amt_eth = LPQuote(False).get_amount_from_lp(lp, eth, 1)
-amt_tkn = LPQuote().get_amount_from_lp(lp, eth, 1)
-print(f'1 LP token settles to {amt_eth} ETH (scale-dependent)')
-print(f'1 LP token settles to {amt_tkn} TKN')
+lp_shares = LPQuote().get_lp_from_amount(lp, dai, 1000)
 ```
 
-<div class="nb-output">{`1 LP token settles to 0.19969005990701796 ETH (scale-dependent)
-1 LP token settles to 19.969005990701795 TKN`}</div>
+### `get_liquidity(lp, tkn, amount_in)`
 
-### Token to LP
+Compute the proportional LP-share amount for a given token reserve quantity using the V2-style formula `amount_in * total_supply / reserve_token`. V2-natural; on V3 the result is structural (uses `lp.total_supply` and `lp.reserve0/reserve1` if present), but in practice the more useful V3 query is `get_lp_from_amount`.
 
-```python
-amt_eth_lp = LPQuote(False).get_lp_from_amount(lp, eth, 1)
-amt_tkn_lp = LPQuote(False).get_lp_from_amount(lp, tkn, 1)
-print(f'1 ETH = {amt_eth_lp} LP tokens')
-print(f'1 TKN = {amt_tkn_lp} LP tokens')
-```
+### `get_opposing_token(lp, tkn)`
 
-<div class="nb-output">{`1 ETH = 5.00876001071831 LP tokens
-1 TKN = 0.05007523748156423 LP tokens`}</div>
+Returns the other ERC20 in the pool's pair. Helper used internally by the amount methods, exposed so user code doesn't have to inspect `lp.token0` / `lp.token1` directly.
 
-## Notes
+## Per-protocol availability
 
-- **`LPQuote.get_amount` dispatches across V2 and V3.** Direct calls to `pool.get_amount_out` are V2-specific; V3 doesn't expose that method on the exchange object.
-- **Paper value vs. settlement value.** Position-level primitives use linear-share token amounts (paper value); `LPQuote(False).get_amount_from_lp` returns *settlement* value via a synthetic exit swap. Both are valid; pick based on whether you're answering "what would I get if I closed?" (settlement) or "what's my proportional reserve share?" (paper).
+| Protocol | Status |
+|---|---|
+| Uniswap V2 | ✅ All methods |
+| Uniswap V3 | ✅ All methods (amount-style methods require `lwr_tick` / `upr_tick`) |
+| Balancer | 🔜 v2.1 — see "What's coming in v2.1" below |
+| Stableswap | 🔜 v2.1 |
+
+### What's coming in v2.1
+
+The architectural intent is full cross-protocol `LPQuote` — same call shapes, dispatching to Balancer and Stableswap pools through the existing methods. The API surface will be **add-only**: existing V2/V3 calls won't change, and existing user code won't break. The Core Primitives availability matrix on [Core Primitives](/core-primitives/) tracks the wiring status.
+
+## How `LPQuote` interacts with the rest of the pipeline
+
+`LPQuote` is read-only, so it has no place in the mutate-the-pool pipeline. It's the **read substrate** every other primitive sits on:
+
+- The Agentic Primitives ([`AnalyzePosition`](/agentic-primitives/position-analysis/), [`SimulatePriceMove`](/agentic-primitives/price-scenarios/), etc.) all reach through `LPQuote` for cross-protocol-safe state reads rather than calling `lp.get_amount_out` directly.
+- [`SwapDeposit`](/api/primitive/core/swap-deposit/) and [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) use `LPQuote` to project the post-swap state during the closed-form / numeric solves for the optimal fraction.
+- [Tutorials](/tutorials/uniswapv2/uniswap-v2/) lean on `LPQuote.get_price` and `get_reserve` for any state read in code samples that should work on both V2 and V3.
+
+When v2.1 lands, `LPQuote` will work the same way against `LiveProvider`-built twins (i.e. real chain reads) as it does against `MockProvider` snapshots today.
 
 ## See also
 
-- [`Swap`](/api/primitive/core/swap/) — execution counterpart.
-- [Core API overview](/api/primitive/core/) — index of execution primitives.
-- [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — `LPQuote` examples in context.
+- [`Swap`](/api/primitive/core/swap/) — mutating counterpart to `get_amount`
+- [`AnalyzePosition`](/agentic-primitives/position-analysis/) — built on top of `LPQuote` reads
+- [`SimulatePriceMove`](/agentic-primitives/price-scenarios/) — non-mutating projection that uses `LPQuote` internally
+- [Core Primitives](/core-primitives/) — narrative overview with the cross-protocol availability matrix
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants

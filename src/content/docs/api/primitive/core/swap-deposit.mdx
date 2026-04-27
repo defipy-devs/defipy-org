@@ -1,90 +1,105 @@
 ---
 title: "SwapDeposit"
-description: "Single-sided deposit (zap-in). Provide one token; the primitive computes the optimal swap fraction, swaps, and deposits — leaving zero dust."
+description: "Single-sided deposit (zap-in) for V2/V3. Computes the optimal swap fraction, swaps, then deposits — exiting with a balanced LP position from a single-token starting point."
 ---
 
-```python
-class defipy.process.SwapDeposit()
-```
+Convert a single-token holding into a balanced LP position in one shot. `SwapDeposit` is a **mutating** dispatch primitive that internally swaps an *optimal fraction* of the input, then deposits the resulting two-sided balance. **V2/V3 only** — see the architectural reason below.
 
-Single-sided deposit, also called a *zap-in*. The caller arrives with only one token from the pair; the primitive computes the optimal swap fraction α, swaps that fraction for the other token, then performs a balanced two-sided deposit. No leftover dust.
+:::note[When to use `SwapDeposit` vs (`Swap` + `AddLiquidity`)]
+The pair `Swap` then [`AddLiquidity`](/api/primitive/core/add-liquidity/) gives you control over the swap fraction. `SwapDeposit` does it in one shot with the optimal fraction computed internally — closed-form for V2 (a quadratic accounting for the 0.3% fee), numeric optimization on `[0.35, 0.65]` for V3 (`scipy.optimize.minimize`, Nelder-Mead). Use the pair when you want a custom fraction; use `SwapDeposit` when you want zero dust and don't care about the exact split.
+:::
 
-The closed-form V2 zap formula is `f·α²·dx + r·α·(1+f) − r = 0` where `f = 0.997` is the fee multiplier, `r` is the input-token reserve, and `dx` is the deposit amount. The primitive solves the quadratic, executes the swap leg, then deposits the remainder.
+:::note[When to use `SwapDeposit` vs `OptimalDepositSplit`]
+`SwapDeposit` *executes* the swap-and-deposit. [`OptimalDepositSplit`](/agentic-primitives/optimization/) is the **non-mutating projection** — it runs the same V2 closed-form solve and returns the optimal split as a typed dataclass without touching the pool. Pair them when you want a preview-then-execute flow: project with `OptimalDepositSplit`, decide whether to act, then call `SwapDeposit`. The two share the V2 solve at `SwapDeposit._calc_univ2_deposit_portion`.
+:::
 
-Available on **Uniswap V2 and Uniswap V3** only. Balancer and Stableswap support is tracked for a later release.
+## Signature at a glance
 
-## Methods
+| Protocol | Required call shape |
+|---|---|
+| Uniswap V2 | `SwapDeposit().apply(lp, token_in, user_nm, amount_in)` |
+| Uniswap V3 | `SwapDeposit().apply(lp, token_in, user_nm, amount_in, lwr_tick, upr_tick)` |
+| Balancer | ❌ Not supported — see "Why no Balancer/Stableswap section" below |
+| Stableswap | ❌ Not supported |
 
-### apply
+## Common parameters
 
-```python
-amount_out = SwapDeposit().apply(pool, token_in, user, amount_in)
-```
-
-Deposit `amount_in` of `token_in` into `pool` on behalf of `user`, swapping the optimal portion internally so the deposit balances cleanly.
-
-**Parameters**
-
-| Name | Type | Description |
+| Parameter | Type | Description |
 |---|---|---|
-| `pool` | exchange | Pool instance to deposit into. V2 or V3 only. |
-| `token_in` | `ERC20` | The single token the user is depositing. The other token of the pair is acquired via the internal swap. |
-| `user` | `str` | User address (string identifier) who provides liquidity and receives LP tokens. |
-| `amount_in` | `float` | Amount of `token_in` to zap in. |
+| `lp` | `Exchange` | Initialized V2 or V3 pool with active liquidity. |
+| `token_in` | `ERC20` | The single token the user holds and wants to deposit on both sides. |
+| `user_nm` | `str` | Account name receiving the resulting LP credit. |
+| `amount_in` | `float` | Total quantity of `token_in` available to spend (swap + deposit combined). |
 
-**Returns**
+## Protocol Variants
 
-| Name | Type | Description |
+### Uniswap V2
+
+The dispatcher solves a closed-form quadratic for the optimal swap fraction `alpha`, accounting for V2's 0.3% fee, then runs:
+
+1. [`Swap`](/api/primitive/core/swap/) `alpha * amount_in` of `token_in` for the other token.
+2. `lp.quote(...)` the matching amount of `token_in` against the post-swap reserves.
+3. `lp.add_liquidity(user_nm, balance0, balance1, balance0, balance1)` to mint LP shares.
+
+| Parameter | Type | Notes |
 |---|---|---|
-| `amount_out` | `float` | Amount of the *other* token that was acquired internally and deposited alongside the remainder of `token_in`. |
-
-## Example
-
-### Zap exact token1 into the pool
+| (no extras) | — | Common parameters only. |
 
 ```python
-from defipy import *
+from defipy import SwapDeposit
 
-user_nm = 'user'
-eth_amount = 1000
-tkn_amount = 100000
-
-tkn = ERC20("TKN", "0x111")
-eth = ERC20("ETH", "0x09")
-exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = tkn, symbol="LP", address="0x011")
-
-factory = UniswapFactory("ETH pool factory", "0x2")
-lp = factory.deploy(exchg_data)
-
-Join().apply(lp, user_nm, eth_amount, tkn_amount)
-SwapDeposit().apply(lp, tkn, user_nm, 100)
-lp.summary()
+# Hold 1000 DAI; want a balanced ETH/DAI LP position
+deposited = SwapDeposit().apply(lp, dai, "user", 1000)
+# Returns the total `token_in`-denominated value deposited (swap leg + deposit leg)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1000.0, TKN = 100100.0
-Liquidity: 10004.991241237401`}</div>
+The closed-form quadratic lives at `SwapDeposit._calc_univ2_deposit_portion`. It's the same math the read-only [`OptimalDepositSplit`](/agentic-primitives/optimization/) primitive composes against — same `alpha`, no mutation.
 
-### Zap exact token0 into the pool
+### Uniswap V3
+
+V3 doesn't admit a closed-form solution because the in-range liquidity-to-amount relationship varies with the sqrt-price across the range. The dispatcher uses `scipy.optimize.minimize(method='Nelder-Mead', bounds=[(0.35, 0.65)])` to find the optimal swap fraction numerically, then:
+
+1. Swap that fraction of `token_in`.
+2. Compute the in-range liquidity `L` from the post-swap balance using `UniV3Helper.calc_Lx` / `calc_Ly`.
+3. `lp.mint(user_nm, lwr_tick, upr_tick, L)` to mint the position.
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `lwr_tick` | `int` | Lower tick of the position. Must be `tick_spacing`-aligned. |
+| `upr_tick` | `int` | Upper tick. |
 
 ```python
-amount_out = SwapDeposit().apply(lp, eth, user_nm, 1)
-lp.summary()
+from defipy import SwapDeposit, UniV3Utils
+
+tick_spacing = 60
+lwr_tick = UniV3Utils.getMinTick(tick_spacing)
+upr_tick = UniV3Utils.getMaxTick(tick_spacing)
+
+deposited = SwapDeposit().apply(lp, dai, "user", 1000, lwr_tick, upr_tick)
 ```
 
-<div class="nb-output">{`Exchange ETH-TKN (LP)
-Reserves: ETH = 1001.0, TKN = 100000.0
-Liquidity: 10004.991241237401`}</div>
+:::caution[Numerical solve, not closed-form]
+The V3 solve is bounded to `[0.35, 0.65]` and stops at `tol=1e-8`. For tight ranges or extreme sqrt-prices, the optimum can sit at a boundary — there's no warning emitted, but the dust will be larger than the V2 closed-form gives. Spot-check the residual if you're scripting against thin ranges.
+:::
 
-## Notes
+### Why no Balancer/Stableswap section
 
-- **The optimal swap fraction is *not* 0.5.** The closed-form solution gives α → 1/(1+f) ≈ 0.50075 in the zero-deposit limit (slight upward bias from the fee asymmetry), and α *decreases* with deposit size. A larger zap moves the price more, so each unit swapped buys less, so the optimal fraction shrinks.
-- For a *non-mutating* projection of what `SwapDeposit` would do — useful for previewing α and the expected LP-token mint — see the [`OptimalDepositSplit`](/api/primitive/agentic/) agentic primitive.
-- The mechanism is: deposit incoming token → perform 50%-side swap → perform 50/50 deposit with the remaining input plus the swap output.
+`SwapDeposit` exists because V2/V3 deposits at the pool level need balanced two-sided amounts — providing a single token requires a manual swap step first. **Balancer and Stableswap don't have this constraint:** [`AddLiquidity`](/api/primitive/core/add-liquidity/) already accepts a single-token-in call shape and the pool math handles the imbalance against the invariant directly. There's no swap-then-deposit pattern to abstract because the underlying primitive already does what you'd want.
+
+The dispatcher reflects this — the `defipy.process.deposit` namespace re-exports only `uniswappy.process.deposit.SwapDeposit`, so calling `SwapDeposit().apply(lp, ...)` against a `BalancerExchange` or `StableswapExchange` will fail at the version check (no `.version` attribute on those exchanges). Use [`AddLiquidity`](/api/primitive/core/add-liquidity/) for those protocols.
+
+## How `SwapDeposit` interacts with the rest of the pipeline
+
+1. [`Join`](/api/primitive/core/join/) → [`AddLiquidity`](/api/primitive/core/add-liquidity/) — pool initialized.
+2. **Pre-deposit projection** — [`OptimalDepositSplit`](/agentic-primitives/optimization/) (V2 only) projects the same `alpha` `SwapDeposit` will use, plus the resulting balance, without mutating.
+3. **`SwapDeposit`** — execute the zap-in (this primitive).
+4. **Post-deposit analytics** — [`AnalyzePosition`](/agentic-primitives/position-analysis/) decomposes the resulting position over time.
 
 ## See also
 
-- [`Join`](/api/primitive/core/join/) — first-time pool initialization.
-- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — double-sided variant.
-- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — the inverse operation (zap-out).
-- [Tutorials → swap-deposit](/tutorials/uniswapv2/swap-deposit/) — runnable walkthrough including layered LP-token zaps.
+- [`Swap`](/api/primitive/core/swap/) — the swap leg, used standalone
+- [`AddLiquidity`](/api/primitive/core/add-liquidity/) — the deposit leg, also handles Balancer/Stableswap single-asset adds
+- [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) — the inverse zap-out (V2/V3 only)
+- [`OptimalDepositSplit`](/agentic-primitives/optimization/) — non-mutating V2 projection of the same solve
+- [Tutorials → Uniswap V2 — Swap & Deposit](/tutorials/uniswapv2/swap-deposit/) — runnable walkthrough
+- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
