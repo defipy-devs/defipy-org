@@ -1,6 +1,420 @@
 ---
-title: "Uniswap V3 Math"
-description: "Coming soon."
+title: "Uniswap V3"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+* [Medium Article: Uniswap V3 Math Tutorial using UniswapPy](https://medium.com/coinmonks/uniswap-v3-math-tutorial-using-uniswappy-c39795d1328a)
+
+* In this tutorial, we review the following:
+    * Swap
+    * Double-sided withdraw
+    * Double-sided deposit
+    * Single-sided withdraw
+
+* To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/medium_articles/univ3_math.ipynb)
+
+```python
+from uniswappy import *
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+```
+
+```python
+user_nm = 'user_intro'
+eth_amount = 1000
+dai_amount = 1000000
+fee = UniV3Utils.FeeAmount.MEDIUM
+tick_spacing = UniV3Utils.TICK_SPACINGS[fee]
+lwr_tick = UniV3Utils.getMinTick(tick_spacing)
+upr_tick = UniV3Utils.getMaxTick(tick_spacing)
+```
+
+## (1a) Swap: dy -> dx
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+Eqs (6.13) and (6.15) of [Uniswap V3 whitepaper](https://atiselsts.github.io/pdfs/uniswap-v3-liquidity-math.pdf) respectively give us:
+
+$\quad\quad \Delta\sqrt{P} = \frac{\Delta y}{L},$ $\quad\quad \Delta\frac{1}{\sqrt{P}} = \frac{\Delta x}{L}$
+
+where 
+
+$\quad\quad \Delta\sqrt{P} = \sqrt{P_{next}} - \sqrt{P},$ $\quad\quad \Delta\frac{1}{\sqrt{P}} = \frac{1}{\sqrt{P_{next}}} - \frac{1}{\sqrt{P}}$
+
+We calculate received $\Delta x$ to be
+
+$\quad\quad \Delta x = L (\frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_{next}}})$
+
+where the next price, $P_{next}$, derived from $\Delta y$ input, with fee included ($\gamma = \frac{997}{1000}$) gives us:
+
+$\quad\quad \sqrt{P_{next}}  = \sqrt{P} + \frac{997 \Delta y}{1000 L}$
+
+### Perform dy -> dx swap using dervation
+
+```python
+dy = 1000
+
+Q96 = 2**96
+sqrtp_cur = lp.slot0.sqrtPriceX96/Q96 # convert from Q96 to human
+
+gamma = 997/1000 
+x = lp.get_reserve(eth)
+y = lp.get_reserve(dai)
+L = lp.get_liquidity()
+
+sqrtp_next = sqrtp_cur + (gamma*dy) / (L)
+dx = L * (1/sqrtp_cur - 1/sqrtp_next) 
+
+print(f'We receive {dx:.5f} ETH for {dy} DAI')
+```
+
+<div class="nb-output">{`We receive 0.99601 ETH for 1000 DAI`}</div>
+
+### Perform dy -> dx swap using uniswappy
+
+```python
+out = Swap().apply(lp, dai, user_nm, dy)
+lp.summary()
+
+print(f'We receive {out:.5f} ETH for {dy} DAI')
+print(f'Confirm price: (1/sqrtp_next^2)={1/sqrtp_next**2:.8f} vs (actual price)={lp.get_price(dai):.8f}')
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 999.0039930189602, TKN = 1001000.0000000001
+Gross Liquidity: 31622.776601683796 
+
+We receive 0.99601 ETH for 1000 DAI
+Confirm price: (1/sqrtp_next^2)=0.00099801 vs (actual price)=0.00099801`}</div>
+
+## (1b) Swap: dx -> dy
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+Eqs (6.13) and (6.15) of [Uniswap V3 whitepaper](https://atiselsts.github.io/pdfs/uniswap-v3-liquidity-math.pdf) respectively give us:
+
+$\quad\quad \Delta\sqrt{P} = \frac{\Delta y}{L},$ $\quad\quad \Delta\frac{1}{\sqrt{P}} = \frac{\Delta x}{L}$
+
+where 
+
+$\quad\quad \Delta\sqrt{P} = \sqrt{P_{next}} - \sqrt{P},$ $\quad\quad \Delta\frac{1}{\sqrt{P}} = \frac{1}{\sqrt{P_{next}}} - \frac{1}{\sqrt{P}}$
+
+We calculate received $\Delta y$ to be:
+
+$\quad\quad \Delta y = L (\sqrt{P} - \sqrt{P_{next}})$
+
+where the next price, $P_{next}$, derived from $\Delta x$ input, with fee included ($\gamma = \frac{997}{1000}$) give us:
+
+$\quad\quad \sqrt{P_{next}}  =\frac{1}{ \frac{1}{\sqrt{P}} + \frac{997 \Delta x}{1000 L}}$
+
+### Perform dx -> dy swap using dervation
+
+```python
+dx = 1
+
+Q96 = 2**96
+sqrtp_cur = lp.slot0.sqrtPriceX96/Q96 # convert from Q96 to human
+
+gamma = 997/1000 
+x = lp.get_reserve(eth)
+y = lp.get_reserve(dai)
+L = lp.get_liquidity()
+
+sqrtp_next = 1/(1/sqrtp_cur + (gamma*dx)/(L))
+dy = L * (sqrtp_cur - sqrtp_next)
+
+print(f'We receive {dy:.5f} DAI for {dx} ETH')
+```
+
+<div class="nb-output">{`We receive 996.00698 DAI for 1 ETH`}</div>
+
+```python
+out = Swap().apply(lp, eth, user_nm, dx)
+lp.summary()
+
+print(f'We receive {out:.5f} DAI for {dx} ETH')
+print(f'Confirm price: (sqrtp_next^2)={sqrtp_next**2:.6f} vs (actual price)={lp.get_price(eth):.6f}')
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1001.0000000000001, TKN = 999003.9930189601
+Gross Liquidity: 31622.776601683796 
+
+We receive 996.00698 DAI for 1 ETH
+Confirm price: (sqrtp_next^2)=998.008978 vs (actual price)=998.008978`}</div>
+
+## (2) Double-sided withdrawal
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+Double-sided deltas for both x and y are provided in eqs (6.29) and (6.30) in [Uniswap V3 whitepaper](https://atiselsts.github.io/pdfs/uniswap-v3-liquidity-math.pdf), which are as such:
+
+$\quad\quad \Delta P_{x} = \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_{b}}} \quad\quad  \Delta P_{y} = \sqrt{P} - \sqrt{P_{a}}$
+
+$\quad\quad \Delta x = \Delta L \Delta P_{x}  \quad\quad \Delta y = \Delta L \Delta P_{y}$
+
+Once determined, we update our price curve using the CPT withdraw formula, which is given as:
+
+$\quad\quad (x - \Delta x)(y - \Delta y) = (L - \Delta L)^2$
+
+For derivation of above formula, see [here](https://defipy.readthedocs.io/en/latest/math/univ2_math.html#Doubled-sided-withdraw)
+
+### Calculate withdrawal using derivation
+
+```python
+dx = 1
+
+Q96 = 2**96
+sqrtp_pa = TickMath.getSqrtRatioAtTick(lwr_tick)/Q96
+sqrtp_pb = TickMath.getSqrtRatioAtTick(upr_tick)/Q96
+sqrtp_cur = lp.slot0.sqrtPriceX96/Q96
+
+dPx = (1/sqrtp_cur - 1/sqrtp_pb)  
+dPy = (sqrtp_cur - sqrtp_pa) 
+dLx = dx/(1/sqrtp_cur - 1/sqrtp_pb)
+
+dx = dLx*dPx
+dy = dLx*dPy
+
+new_x = (x-dx)
+new_y = (y-dy) 
+new_L = L-dLx
+
+print(f'The updated reserves are {new_x:8f} ETH and {new_y:8f} DAI, and the updated liquidity is {new_L:8f}')
+```
+
+<div class="nb-output">{`The updated reserves are 999.000000 ETH and 999000.000000 DAI, and the updated liquidity is 31591.153825`}</div>
+
+### Perform withdrawal using uniswappy
+
+```python
+RemoveLiquidity().apply(lp, eth, user_nm, dx, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 999.0000000000001, TKN = 999000.0000000001
+Gross Liquidity: 31591.15382508211`}</div>
+
+## (3) Double-sided deposit
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+Double-sided deltas for both x and y are provided in eqs (6.29) and (6.30) in [Uniswap V3 whitepaper](https://atiselsts.github.io/pdfs/uniswap-v3-liquidity-math.pdf), which are as such:
+
+$\quad\quad \Delta P_{x} = \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_{b}}} \quad\quad  \Delta P_{y} = \sqrt{P} - \sqrt{P_{a}}$
+
+$\quad\quad \Delta x = \Delta L \Delta P_{x}  \quad\quad \Delta y = \Delta L \Delta P_{y}$
+
+Once determined, we update our price curve using the CPT deposit formula, which is given as:
+
+$\quad\quad (x + \Delta x)(y + \Delta y) = (L + \Delta L)^2$
+
+For derivation of above formula, see [here](https://defipy.readthedocs.io/en/latest/math/univ2_math.html#Doubled-sided-deposit)
+
+### Calculate deposit using derivation
+
+```python
+dx = 1
+
+Q96 = 2**96
+sqrtp_pa = TickMath.getSqrtRatioAtTick(lwr_tick)/Q96
+sqrtp_pb = TickMath.getSqrtRatioAtTick(upr_tick)/Q96 
+sqrtp_cur = lp.slot0.sqrtPriceX96/Q96
+
+dPx = (1/sqrtp_cur - 1/sqrtp_pb)  
+dPy = (sqrtp_cur - sqrtp_pa) 
+dLx = dx/(1/sqrtp_cur - 1/sqrtp_pb)
+
+dx = dLx*dPx
+dy = dLx*dPy
+
+new_x = x+dx
+new_y = y+dy
+new_L = L+dLx
+
+print(f'The updated reserves are {new_x:8f} ETH and {new_y:8f} DAI, and the updated liquidity is {new_L:8f}')
+```
+
+<div class="nb-output">{`The updated reserves are 1001.000000 ETH and 1001000.000000 DAI, and the updated liquidity is 31654.399378`}</div>
+
+### Perform deposit using uniswappy
+
+```python
+AddLiquidity().apply(lp, eth, user_nm, dx, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1001.0000000000001, TKN = 1001000.0000000001
+Gross Liquidity: 31654.39937828548`}</div>
+
+## (4a) Single-sided withdrawal: dx
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+A single-sided withdraw constitutes of the sum total of a withdraw and a swap, otherwise known as a WithdrawSwap, and is given by
+
+$\quad\quad \Delta x = \Delta L ( \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_{b}}})$, $\quad\quad \Delta y = \Delta L (\sqrt{P} - \sqrt{P_{a}})$
+
+$\quad\quad \Delta y_{ws} = \Delta y + (L - \Delta L) (\sqrt{P} - \frac{1}{ \frac{1}{\sqrt{P}} + \frac{997 \Delta x}{1000(L - \Delta L)} })$
+
+To solve for $\Delta L$ we plug $\Delta x$ and $\Delta y$ into $\Delta y_{ws}$, after some algebra, we get the following quadratic:
+
+$(997\Delta P_{y} \Delta P_{x} \sqrt{P}- 1000 \Delta P_{x} P - 997 \Delta P_{y})\Delta L^2$ 
+
+$\quad\quad + (-997 \Delta P_{y} \sqrt{P} \Delta y_{w} + 1000 \Delta y_{w}P + 997 L \Delta P_{y} + 1000 L \Delta P_{x} P)\Delta L$ 
+
+$\quad\quad - (1000 L \Delta y_{ws} P) = 0$
+
+Given the fact we know our desired withdraw amount, $\Delta y_{ws}$, we solve the above quadratic to determine our single-sided settlement amount in terms of $\Delta L$
+
+### Perform single-sided withdrawal using uniswappy
+
+```python
+WithdrawSwap().apply(lp, eth, user_nm, 1, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 999.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31606.937511796757`}</div>
+
+## (4b) Single-sided withdrawal: dy
+
+```python
+eth = ERC20("ETH", "0x09")
+dai = ERC20("TKN", "0x111")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 1000000.0000000001
+Gross Liquidity: 31622.776601683796`}</div>
+
+A single-sided withdraw constitutes of the sum total of a withdraw and a swap, otherwise known as a WithdrawSwap, and is given by
+
+$\quad\quad \Delta x = \Delta L ( \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_{b}}})$, $\quad\quad \Delta y = \Delta L (\sqrt{P} - \sqrt{P_{a}})$
+
+$\quad\quad \Delta x_{ws} = \Delta x + (L - \Delta L) (\frac{1}{\sqrt{P}} - \frac{1}{ \sqrt{P} + \frac{997 \Delta y}{1000(L - \Delta L)} })$
+
+To solve for $\Delta L$ we plug $\Delta x$ and $\Delta y$ into $\Delta x_{ws}$, after some algebra, we get the following quadratic:
+
+$(997\Delta P_{y} \Delta P_{x} \sqrt{P}- 1000 \Delta P_{x} P - 997 \Delta P_{y})\Delta L^2$ 
+
+$\quad\quad + (-997 \Delta P_{y} \sqrt{P} \Delta x_{ws}  + 1000 \Delta x_{ws}P + 997L \Delta P_{y} + 1000 L \Delta P_{x} P)\Delta L$
+
+$\quad\quad - (1000 L \Delta x_{ws} P) = 0$
+
+Given the fact we know our desired withdraw amount, $\Delta x_{ws}$, we solve the above quadratic to determine our single-sided settlement amount in terms of $\Delta L$
+
+### Perform single-sided withdrawal using uniswappy
+
+```python
+WithdrawSwap().apply(lp, dai, user_nm, 1000, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-TKN (LP)
+Real Reserves:   ETH = 1000.0000000000001, TKN = 999000.0
+Gross Liquidity: 31606.937511796754`}</div>
