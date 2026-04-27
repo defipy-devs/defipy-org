@@ -152,12 +152,16 @@ anomaly_detected:     False`}</div>
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Pool-health metrics — TVL, reserves, LP concentration, swap activity, fee accrual, rug signals — are V2/V3-focused in v2.0. The category framing (concentration risk, swap-history-derived activity, threshold-based rug detection) is most natural on constant-product binary pools; weighted and amplified pools have their own risk surfaces (covered under [Risk](/agentic-primitives/risk/)).
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | All three primitives |
-| Uniswap V3 | ⚠️ | `CheckPoolHealth` partial (`num_swaps`/`fee_accrual_rate_recent` None); `DetectRugSignals` `inactive_with_liquidity` always False; `DetectFeeAnomaly` raises |
-| Balancer | ❌ | `DetectFeeAnomaly` raises; others not yet ported |
-| Stableswap | ❌ | `DetectFeeAnomaly` raises; others not yet ported |
+| Uniswap V2 | Full | `CheckPoolHealth`, `DetectRugSignals`, `DetectFeeAnomaly` all V2-supported. |
+| Uniswap V3 | Partial | `CheckPoolHealth` and `DetectRugSignals` work; `DetectFeeAnomaly` is V2-only (blocked on `UniV3Helper.quote` hard-coded fee — see cleanup backlog). `num_swaps` and `fee_accrual_rate_recent` are V2-only on `CheckPoolHealth` because V3 lacks per-swap history. |
+| Balancer | N/A | LP concentration, swap activity, and rug signals don't map cleanly to weighted-pool semantics where TVL is shares-based and concentration is a different question; v1 keeps the category Uniswap-focused. |
+| Stableswap | N/A | Same as Balancer; the at-peg / off-peg framing of stableswap risk is captured by [`AssessDepegRisk`](/agentic-primitives/risk/) under Risk instead. |
+
+V3 fee-anomaly support unblocks once the upstream `UniV3Helper.quote` fix lands (tracked in the cleanup backlog).
 
 ## MCP tool exposure
 
