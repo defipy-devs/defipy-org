@@ -35,12 +35,12 @@ export default defineConfig({
 					tag: 'script',
 					attrs: {
 						async: true,
-						src: 'https://www.googletagmanager.com/gtag/js?id=G-RVXH17JXT0',
+						src: 'https://www.googletagmanager.com/gtag/js?id=G-CHT6JCJ9ET,
 					},
 				},
 				{
 					tag: 'script',
-					content: `window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', 'G-RVXH17JXT0');`,
+					content: `window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', 'G-CHT6JCJ9ET');`,
 				},
 			],
 			// Sidebar default-state policy:
