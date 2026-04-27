@@ -164,12 +164,14 @@ optimal_range: full_range`}</div>
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Optimization primitives are per-protocol single-primitive coverage — each protocol gets the optimization question that's most relevant to its mechanics, rather than a parallel sibling family.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | `OptimalDepositSplit`, `EvaluateRebalance` |
-| Uniswap V3 | ✅ | `EvaluateTickRanges` (V2/V3 zap variants pending UniV3Helper backlog for the others) |
-| Balancer | ❌ | Multi-asset deposit semantics differ; not yet ported |
-| Stableswap | ❌ | Single-sided deposits use a different objective; not yet ported |
+| Uniswap V2 | Full | `OptimalDepositSplit` (zap-in fraction), `EvaluateRebalance` (rebalance cost vs benefit). |
+| Uniswap V3 | Full | `EvaluateTickRanges` (tick-range candidate evaluation + split). |
+| Balancer | Deferred (v2.1) | Optimal-weight selection and zap-in optimization deferred until weighted-pool primitives stabilize. |
+| Stableswap | Deferred (v2.1) | Stableswap zap-in is non-trivial (non-symmetric reserves at peg) and unblocked by future invariant-math primitives. |
 
 ## MCP tool exposure
 
