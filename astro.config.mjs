@@ -30,6 +30,19 @@ export default defineConfig({
 				'./src/styles/custom.css',
 				'katex/dist/katex.min.css',
 			],
+			head: [
+				{
+					tag: 'script',
+					attrs: {
+						async: true,
+						src: 'https://www.googletagmanager.com/gtag/js?id=G-RVXH17JXT0',
+					},
+				},
+				{
+					tag: 'script',
+					content: `window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', 'G-RVXH17JXT0');`,
+				},
+			],
 			// Sidebar default-state policy:
 			//   Always-open groups: Ecosystem, Getting Started, Concepts, DeFi Math.
 			//     These are the "user-guide" surface — landing visitors should see
