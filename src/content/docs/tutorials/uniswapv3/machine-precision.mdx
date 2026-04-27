@@ -1,6 +1,211 @@
 ---
-title: "Machine Precision (V3)"
-description: "Coming soon."
+title: "Machine Precision"
 ---
 
-This page is being ported. See the [GitHub source](https://github.com/defipy-devs/defipy-docs) in the meantime.
+* Machine precision tests for solidity vetting
+* To download notebook to this tutorial, see [here](https://github.com/defipy-devs/uniswappy/blob/main/notebooks/tutorials/machine_precision_univ3.ipynb)
+
+```python
+from uniswappy import *
+```
+
+```python
+fee = UniV3Utils.FeeAmount.MEDIUM
+tick_spacing = UniV3Utils.TICK_SPACINGS[fee]
+lwr_tick = UniV3Utils.getMinTick(tick_spacing)
+upr_tick = UniV3Utils.getMaxTick(tick_spacing)
+```
+
+```python
+user_nm = 'user_machine_check'
+eth_amount = UniV3Helper().dec2gwei(1000)
+dai_amount = UniV3Helper().dec2gwei(100000)
+```
+
+### 1. Check abstract interface
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+out_v3 = Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+
+AddLiquidity().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(10), lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 1009999999999999999452, DAI = 100999999999999999999452
+Gross Liquidity: 10100000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+
+RemoveLiquidity().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(100), lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 899999999999999999512, DAI = 89999999999999999999512
+Gross Liquidity: 9000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+
+Swap().apply(lp, dai, user_nm, UniV3Helper().dec2gwei(1000))
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 990128419656029386469, DAI = 100999999999999999999457
+Gross Liquidity: 10000000000000000000000`}</div>
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+
+WithdrawSwap().apply(lp, eth, user_nm, UniV3Helper().dec2gwei(10), lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000 
+
+Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 989999999999999967775, DAI = 99999999999999999999457
+Gross Liquidity: 9949799447405356417024`}</div>
+
+### 2. Check quotes
+
+```python
+dai = ERC20("DAI", "0x111")
+eth = ERC20("ETH", "0x09")
+
+exchg_data = UniswapExchangeData(tkn0 = eth, tkn1 = dai, symbol="LP", 
+                                   address="0x011", version = 'V3', 
+                                   tick_spacing = tick_spacing, 
+                                   precision = UniswapExchangeData.TYPE_GWEI,
+                                   fee = fee)
+
+factory = UniswapFactory("ETH pool factory", "0x2")
+lp = factory.deploy(exchg_data)
+
+Join().apply(lp, user_nm, eth_amount, dai_amount, lwr_tick, upr_tick)
+lp.summary()
+```
+
+<div class="nb-output">{`Exchange ETH-DAI (LP)
+Real Reserves:   ETH = 999999999999999999457, DAI = 99999999999999999999457
+Gross Liquidity: 10000000000000000000000`}</div>
+
+```python
+p_eth = LPQuote().get_price(lp, eth)
+p_dai = LPQuote().get_price(lp, dai)
+print(f'The price of {eth.token_name} in {dai.token_name} is {p_eth}')
+print(f'The price of {dai.token_name} in {eth.token_name} is {p_dai}')
+```
+
+<div class="nb-output">{`The price of ETH in DAI is 99.99999999999999
+The price of DAI in ETH is 0.01`}</div>
+
+```python
+amt_eth = LPQuote(include_fee = True).get_amount(lp, eth, UniV3Helper().dec2gwei(1), lwr_tick, upr_tick)
+amt_dai = LPQuote(include_fee = True).get_amount(lp, dai, UniV3Helper().dec2gwei(1), lwr_tick, upr_tick)
+print(f'{UniV3Helper().dec2gwei(1)} {eth.token_name} token is worth {amt_dai} {dai.token_name} after swap fees')
+print(f'{UniV3Helper().dec2gwei(1)} {dai.token_name} token is worth {amt_eth} {eth.token_name} after swap fees')
+```
+
+<div class="nb-output">{`1000000000000000000 ETH token is worth 9969900600093062.0 DAI after swap fees
+1000000000000000000 DAI token is worth 9.960069810398763e+19 ETH after swap fees`}</div>
+
+```python
+amt_eth = LPQuote(False).get_amount_from_lp(lp, eth, UniV3Helper().dec2gwei(1), lwr_tick, upr_tick)
+amt_dai = LPQuote().get_amount_from_lp(lp, eth, UniV3Helper().dec2gwei(1), lwr_tick, upr_tick)
+print(f'{UniV3Helper().dec2gwei(1)} LP token is worth {amt_eth} {eth.token_name}')
+print(f'{UniV3Helper().dec2gwei(1)} LP token is worth {amt_dai} {dai.token_name}')
+```
+
+<div class="nb-output">{`1000000000000000000 LP token is worth 1.9969005990709152e+17 ETH
+1000000000000000000 LP token is worth 1.9905136039497507e+19 DAI`}</div>
