@@ -136,6 +136,34 @@ def strip_sphinx_only(text: str) -> str:
     return text
 
 
+# MDX rejects pandoc's `<https://...>` autolinks because `<` starts a JSX
+# expression. Convert them to plain bare URLs (which MDX renders as links).
+_AUTOLINK = re.compile(r"<((?:https?|ftp|mailto):[^>\s]+)>")
+
+
+def fix_autolinks(text: str) -> str:
+    return _AUTOLINK.sub(r"\1", text)
+
+
+# GPT/Bing-style citation artifacts left in the source RST.
+_CONTENT_REFERENCE = re.compile(r":contentReference\\?\[[^\]]*\\?\]\{[^}]*\}")
+# Pandoc emits the title-ref RST role as `<span class="title-ref">x</span>` —
+# MDX accepts this but it's noisy; downgrade to backtick-code.
+_TITLE_REF_SPAN = re.compile(r'<span class="title-ref">([^<]*)</span>')
+# Pandoc writes RST `.. image::` as a raw <img> tag with an attribute string
+# that includes class="align-center", style=, etc. The src is relative to the
+# RST file's directory ("img/foo.png"); rewrite to absolute /img/foo.png so it
+# resolves to public/img after we copy assets there. Width attrs are dropped.
+_RAW_IMG = re.compile(r'<img\s+src="(?:\.\./)*img/([^"]+)"[^/>]*/?>')
+
+
+def fix_pandoc_artifacts(text: str) -> str:
+    text = _CONTENT_REFERENCE.sub("", text)
+    text = _TITLE_REF_SPAN.sub(r"`\1`", text)
+    text = _RAW_IMG.sub(r"![](/img/\1)", text)
+    return text
+
+
 # Pandoc renders RST hash-banners (`####\n title \n####`) as `# title`.
 # Already correct, no fix needed.
 
@@ -173,6 +201,8 @@ def convert(rst_text: str, fallback_title: str) -> str:
     md = strip_sphinx_only(md)
     md = rewrite_refs(md)
     md = fix_admonitions(md)
+    md = fix_autolinks(md)
+    md = fix_pandoc_artifacts(md)
     title, body = extract_title_and_strip(md)
     title = title or fallback_title
     description = derive_description(body)
