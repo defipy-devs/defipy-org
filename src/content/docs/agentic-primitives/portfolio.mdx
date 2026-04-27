@@ -1,139 +1,15 @@
 ---
 title: "Portfolio"
-description: "Portfolio answers \"how is the LP book doing as a whole?\" — aggregating N positions across protocols into a single common-numeraire view."
+description: "Cross-protocol portfolio aggregation — how is the LP book doing as a whole? Composition-layer dispatch over per-protocol leaf analyzers."
 ---
 
 Portfolio answers *"how is the LP book doing as a whole?"* — aggregating N positions across protocols into a single common-numeraire view.
 
-One primitive: `AggregatePortfolio`. The category is intentionally small in v1 — once leaf primitives stabilize, more portfolio-level views land here.
+One primitive in v1. The category is intentionally small — once leaf primitives stabilize, more portfolio-level views land here.
 
-All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+## Primitives in this category
 
-## Setup
-
-```python
-from defipy.twin import MockProvider, StateTwinBuilder
-from defipy.utils.data import PortfolioPosition
-
-provider = MockProvider()
-builder = StateTwinBuilder()
-
-lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
-lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
-lp_bal = builder.build(provider.snapshot("eth_dai_balancer_50_50"))
-```
-
-## AggregatePortfolio
-
-**Purpose.** Aggregate N LP positions (mixed V2/V3/Balancer/Stableswap) into a single portfolio-level view sharing a common first-token numeraire.
-
-**Signature.**
-
-```python
-AggregatePortfolio().apply(positions) -> PortfolioAnalysis
-```
-
-`positions` is a list of `PortfolioPosition` objects. The numeraire is enforced as the shared first-token symbol across positions — mismatched first tokens raise `ValueError`. V2/V3/Balancer positions must set `entry_x_amt` and `entry_y_amt`; Stableswap positions must set `entry_amounts` (per-token list, pool insertion order).
-
-In v1 Balancer/Stableswap contribute `fee_income = 0.0` (no per-LP fee attribution in upstream). Stableswap unreachable-alpha positions contribute `0.0` to totals and append a note to `shared_exposure_warnings`.
-
-**Protocol-specific input shapes.** The single `positions` argument dispatches across protocols. Each protocol expects different fields on `PortfolioPosition`:
-
-| Protocol | Required fields on `PortfolioPosition` | Notes |
-|---|---|---|
-| Uniswap V2 | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt` | Standard pair shape. |
-| Uniswap V3 | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt`, `lwr_tick`, `upr_tick` | Tick range required for concentrated liquidity. |
-| Balancer | `lp`, `lp_init_amt`, `entry_x_amt`, `entry_y_amt` | Same pair shape as V2/V3; mapped to base/opp internally. |
-| Stableswap | `lp`, `lp_init_amt`, `entry_amounts` | **Different shape** — `entry_amounts` is a list `[x0, x1]` in pool insertion order, not paired x/y fields. Leave `entry_x_amt` / `entry_y_amt` as `None`. Unreachable-alpha positions contribute `0.0` to totals and append a note to `shared_exposure_warnings`. |
-
-Common to all: `holding_period_days` (optional, enables real-APR fields on per-position summaries), `name` (optional, used as ranking label).
-
-```python
-from defipy import AggregatePortfolio
-
-# Three ETH/DAI positions across three protocols, all entered when ETH was 80 DAI.
-positions = [
-    PortfolioPosition(
-        lp = lp_v2,
-        lp_init_amt = 10000.0,
-        entry_x_amt = 1000.0,
-        entry_y_amt = 80000.0,
-        holding_period_days = 30.0,
-        name = "V2 ETH/DAI",
-    ),
-    PortfolioPosition(
-        lp = lp_v3,
-        lp_init_amt = 10000.0,
-        entry_x_amt = 1000.0,
-        entry_y_amt = 80000.0,
-        lwr_tick = -887220,
-        upr_tick = 887220,
-        holding_period_days = 30.0,
-        name = "V3 ETH/DAI full-range",
-    ),
-    PortfolioPosition(
-        lp = lp_bal,
-        lp_init_amt = 100.0,
-        entry_x_amt = 1000.0,
-        entry_y_amt = 80000.0,
-        holding_period_days = 30.0,
-        name = "Balancer ETH/DAI 50/50",
-    ),
-]
-
-result = AggregatePortfolio().apply(positions)
-```
-
-```python
-print(f"numeraire:           {result.numeraire}")
-print(f"total_value:         {result.total_value:.4f}")
-print(f"total_hold_value:    {result.total_hold_value:.4f}")
-print(f"total_net_pnl:       {result.total_net_pnl:.4f}")
-print(f"total_fees:          {result.total_fees:.4f}")
-print(f"pnl_ranking:         {result.pnl_ranking}")
-print(f"shared_warnings:     {result.shared_exposure_warnings}")
-print()
-print("Per position:")
-for p in result.positions:
-    print(f"  {p.name} ({p.protocol}): pnl={p.net_pnl:.4f}, fees={p.fee_income:.4f}, "
-          f"il={p.il_percentage:.6f}")
-```
-
-<div class="nb-output">{`numeraire:           ETH
-total_value:         204000.0000
-total_hold_value:    183600.0000
-total_net_pnl:       20400.0000
-total_fees:          422.2912
-pnl_ranking:         ['V2 ETH/DAI', 'V3 ETH/DAI full-range', 'Balancer ETH/DAI 50/50']
-shared_warnings:     ['ETH appears in 3 positions: V2 ETH/DAI, V3 ETH/DAI full-range, Balancer ETH/DAI 50/50', 'DAI appears in 3 positions: V2 ETH/DAI, V3 ETH/DAI full-range, Balancer ETH/DAI 50/50']
-
-Per position:
-  V2 ETH/DAI (uniswap_v2): pnl=200.0000, fees=211.1456, il=-0.006192
-  V3 ETH/DAI full-range (uniswap_v3): pnl=200.0000, fees=211.1456, il=-0.006192
-  Balancer ETH/DAI 50/50 (balancer): pnl=20000.0000, fees=0.0000, il=-0.006192`}</div>
-
-**Numeraire enforcement** — mixing a USDC/DAI stableswap position into an ETH-numeraire portfolio raises `ValueError`:
-
-```python
-lp_sts = builder.build(provider.snapshot("usdc_dai_stableswap_A10"))
-
-mixed = positions + [
-    PortfolioPosition(
-        lp = lp_sts,
-        lp_init_amt = 100.0,
-        entry_amounts = [100000.0, 100000.0],
-        holding_period_days = 30.0,
-        name = "Stableswap USDC/DAI",
-    ),
-]
-
-try:
-    AggregatePortfolio().apply(mixed)
-except ValueError as e:
-    print(f"ValueError: {e}")
-```
-
-<div class="nb-output">{`ValueError: AggregatePortfolio: positions must share a common first-token numeraire. Got mixed first tokens: ['ETH', 'USDC']. Either group positions by first-token symbol and call once per group, or rebase values externally before aggregation.`}</div>
+- [`AggregatePortfolio`](/agentic-primitives/portfolio/aggregate-portfolio/) — breadth-chain over `AnalyzePosition` / `AnalyzeBalancerPosition` / `AnalyzeStableswapPosition`. Numeraire enforced as the shared first-token symbol; mismatched first-tokens raise `ValueError`.
 
 ## Protocol coverage
 
@@ -150,4 +26,4 @@ Numeraire must match across positions in a single call (peg-token positions vs E
 
 ## MCP tool exposure
 
-`AggregatePortfolio` is **not** in the curated 10. The MCP curation surfaces leaf primitives only — composition primitives like `AggregatePortfolio` are better assembled LLM-side from `AnalyzePosition` calls so the agent can decide which positions to include, what numeraire to use, and which sub-views to surface.
+Not in the curated v2.0 set. Composition primitives are better assembled LLM-side from `Analyze*Position` calls so the agent can decide which positions to include, what numeraire to use, and which sub-views to surface.

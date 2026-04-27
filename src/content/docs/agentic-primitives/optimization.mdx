@@ -1,178 +1,27 @@
 ---
 title: "Optimization"
-description: "Optimization primitives answer \"what's the best version of this action?\" — the optimal split for a single-sided deposit, the cost of a rebalance, the…"
+description: "Per-protocol primitives for optimal-split, rebalance-cost, and tick-range tradeoff. The category gets the question that's most relevant per AMM."
 ---
 
 Optimization primitives answer *"what's the best version of this action?"* — the optimal split for a single-sided deposit, the cost of a rebalance, the tradeoff across V3 tick ranges.
 
-Three primitives:
-- `OptimalDepositSplit` — V2-only: optimal swap fraction for a single-sided zap-in
-- `EvaluateRebalance` — V2-only: cost of cycling a position (withdraw → swap → re-zap)
-- `EvaluateTickRanges` — V3-only: capital-efficiency vs IL-exposure vs fee-capture tradeoff across N candidate tick ranges
+Per-protocol single-primitive coverage — each protocol gets the optimization question most relevant to its mechanics.
 
-All primitives in the Agentic Primitives section follow the same contract: stateless construction, computation at `.apply()`, typed dataclass return.
+## Primitives in this category
 
-## Setup
-
-```python
-from defipy.twin import MockProvider, StateTwinBuilder
-from defipy.utils.data import TickRangeCandidate
-
-provider = MockProvider()
-builder = StateTwinBuilder()
-lp_v2 = builder.build(provider.snapshot("eth_dai_v2"))
-lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
-v2_tokens = lp_v2.factory.token_from_exchange[lp_v2.name]
-```
-
-## OptimalDepositSplit
-
-**Purpose.** Compute the optimal swap fraction for a single-sided V2 deposit. Closed-form solution — no search, just the algebraic optimum.
-
-**Signature.**
-
-```python
-OptimalDepositSplit().apply(lp, token_in, amount_in) -> DepositSplitResult
-```
-
-Non-mutating projection (delegates to `SwapDeposit._calc_univ2_deposit_portion`). V3 raises `ValueError`. Slippage is reported in token-in units.
-
-```python
-from defipy import OptimalDepositSplit
-
-result = OptimalDepositSplit().apply(
-    lp_v2,
-    token_in = v2_tokens["ETH"],
-    amount_in = 100.0,
-)
-```
-
-```python
-print(f"token_in:               {result.token_in_name}")
-print(f"amount_in:              {result.amount_in}")
-print(f"optimal_fraction:       {result.optimal_fraction:.6f}")
-print(f"swap_amount_in:         {result.swap_amount_in:.4f}")
-print(f"swap_amount_out:        {result.swap_amount_out:.4f}")
-print(f"deposit_amount_in:      {result.deposit_amount_in:.4f}")
-print(f"deposit_amount_out:     {result.deposit_amount_out:.4f}")
-print(f"expected_lp_tokens:     {result.expected_lp_tokens:.4f}")
-print(f"slippage_cost:          {result.slippage_cost:.4f}")
-print(f"slippage_pct:           {result.slippage_pct:.6f}")
-```
-
-<div class="nb-output">{`token_in:               ETH
-amount_in:              100.0
-optimal_fraction:       0.488822
-swap_amount_in:         48.8822
-swap_amount_out:        4647.0751
-deposit_amount_in:      51.1178
-deposit_amount_out:     4647.0751
-expected_lp_tokens:     487.3553
-slippage_cost:          241.1423
-slippage_pct:           0.049331`}</div>
-
-## EvaluateRebalance
-
-**Purpose.** Report the all-in cost of cycling a V2 LP position — withdraw, swap to a single side, re-zap. Reports cost only; the rebalance verdict is left to the caller (or a downstream LLM).
-
-**Signature.**
-
-```python
-EvaluateRebalance().apply(lp, token_out, position_size_lp) -> RebalanceCostReport
-```
-
-V3 raises `ValueError`. Refuses to operate when the caller owns >99.9% of the pool (no counterparty for the swap leg).
-
-```python
-from defipy import EvaluateRebalance
-
-result = EvaluateRebalance().apply(
-    lp_v2,
-    token_out = v2_tokens["DAI"],
-    position_size_lp = 1000.0,
-)
-```
-
-```python
-print(f"token_out:                  {result.token_out_name}")
-print(f"current_value:              {result.current_value:.4f}")
-print(f"withdrawal_total_out:       {result.withdrawal_total_out:.4f}")
-print(f"withdrawal_slippage_pct:    {result.withdrawal_slippage_pct:.6f}")
-print(f"redeposit_slippage_pct:     {result.redeposit_slippage_pct:.6f}")
-print(f"total_slippage_cost:        {result.total_slippage_cost:.4f}")
-print(f"total_slippage_pct:         {result.total_slippage_pct:.6f}")
-print(f"expected_lp_tokens_after:   {result.expected_lp_tokens_after:.4f}")
-print(f"lp_delta:                   {result.lp_delta:.4f}")
-```
-
-<div class="nb-output">{`token_out:                  DAI
-current_value:              20000.0000
-withdrawal_total_out:       18975.6927
-withdrawal_slippage_pct:    0.102431
-redeposit_slippage_pct:     0.102431
-total_slippage_cost:        2162.4265
-total_slippage_pct:         0.108121
-expected_lp_tokens_after:   997.0000
-lp_delta:                   -3.0000`}</div>
-
-## EvaluateTickRanges
-
-**Purpose.** Quantify the capital-efficiency vs IL-exposure vs fee-capture tradeoff across N V3 candidate tick ranges. Optionally compares one wide range against a split of N narrow ranges.
-
-**Signature.**
-
-```python
-EvaluateTickRanges(price_shock=0.10).apply(
-    lp, candidates, split_comparison=None,
-) -> TickRangeEvaluation
-```
-
-`candidates` is a list of `TickRangeCandidate(lwr_tick, upr_tick, name=None)`. `optimal_range` is the highest `fee_capture_pct / il_exposure` (with a 1e-9 floor to avoid divide-by-zero). All candidates must be in-range vs the current tick; out-of-range candidates raise `ValueError`.
-
-```python
-from defipy import EvaluateTickRanges
-
-# Current ETH/DAI tick ≈ 46054. Three candidate ranges around it:
-candidates = [
-    TickRangeCandidate(lwr_tick=45000, upr_tick=47000, name="narrow"),
-    TickRangeCandidate(lwr_tick=44000, upr_tick=48000, name="medium"),
-    TickRangeCandidate(lwr_tick=-887220, upr_tick=887220, name="full_range"),
-]
-
-result = EvaluateTickRanges().apply(lp_v3, candidates)
-```
-
-```python
-print(f"price_shock used:   {result.price_shock}")
-print()
-print(f"{'name':>12}  {'cap_eff':>10}  {'il_exposure':>12}  {'fee_pct':>10}  {'width_pct':>14}")
-for r in result.ranges:
-    print(f"{r.name:>12}  {r.capital_efficiency:>10.4f}  {r.il_exposure:>12.6f}  "
-          f"{r.fee_capture_pct:>10.6f}  {r.range_width_pct:>14.4f}")
-print()
-print(f"optimal_range: {result.optimal_range.name}")
-```
-
-<div class="nb-output">{`price_shock used:   0.1
-
-        name     cap_eff   il_exposure     fee_pct       width_pct
-      narrow     10.5088      6.162096    0.001050          0.1992
-      medium      5.5169      0.174863    0.000551          0.4005
-  full_range      1.0000      0.001260    0.000100  3384921318552237922538062286262632448.0000
-
-optimal_range: full_range`}</div>
+- [`OptimalDepositSplit`](/agentic-primitives/optimization/optimal-deposit-split/) — V2-only: optimal swap fraction for a single-sided zap-in (closed-form quadratic with the counterintuitive `dα/d(dx) < 0` result).
+- [`EvaluateRebalance`](/agentic-primitives/optimization/evaluate-rebalance/) — V2-only: cost of cycling a position (withdraw → swap → re-zap).
+- [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/) — V3-only: capital-efficiency vs IL-exposure vs fee-capture across N candidate ranges.
 
 ## Protocol coverage
 
-Optimization primitives are per-protocol single-primitive coverage — each protocol gets the optimization question that's most relevant to its mechanics, rather than a parallel sibling family.
-
 | Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | Full | `OptimalDepositSplit` (zap-in fraction), `EvaluateRebalance` (rebalance cost vs benefit). |
-| Uniswap V3 | Full | `EvaluateTickRanges` (tick-range candidate evaluation + split). |
+| Uniswap V2 | Full | `OptimalDepositSplit`, `EvaluateRebalance`. |
+| Uniswap V3 | Full | `EvaluateTickRanges`. |
 | Balancer | Deferred (v2.1) | Optimal-weight selection and zap-in optimization deferred until weighted-pool primitives stabilize. |
-| Stableswap | Deferred (v2.1) | Stableswap zap-in is non-trivial (non-symmetric reserves at peg) and unblocked by future invariant-math primitives. |
+| Stableswap | Deferred (v2.1) | Stableswap zap-in is non-trivial (non-symmetric reserves at peg); unblocked by future invariant-math primitives. |
 
 ## MCP tool exposure
 
-None of these are in the curated 10. Optimization primitives require multi-step reasoning — *"is this rebalance worth it?"*, *"should I narrow my range?"* — that's better composed LLM-side over the leaf cost/scenario primitives. The category exists for when an agent needs the building blocks; the verdict is the LLM's job.
+None of these are in the curated v2.0 set. Optimization primitives require multi-step reasoning (*"is this rebalance worth it?"*, *"should I narrow my range?"*) that's better composed LLM-side over the leaf cost/scenario primitives. The category exists for when an agent needs the building blocks; the verdict is the LLM's job.
