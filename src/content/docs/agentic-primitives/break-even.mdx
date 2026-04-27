@@ -111,12 +111,16 @@ diagnosis:               already_broken_even`}</div>
 
 ## Protocol coverage
 
-| Protocol | Supported | Notes |
+Break-even primitives are V2/V3 only in v2.0. The closed-form upside/downside α framing maps cleanly to constant-product math but requires fresh derivation for weighted and amplified pools.
+
+| Protocol | Coverage | Notes |
 |---|---|---|
-| Uniswap V2 | ✅ | Both primitives, closed-form |
-| Uniswap V3 | ✅ | Both primitives, with `lwr_tick`/`upr_tick` for the range-scale factor |
-| Balancer | ❌ | Weighted-pool break-even math not yet ported |
-| Stableswap | ❌ | Flat-curve regime makes break-even semantics ill-defined; not in v1 |
+| Uniswap V2 | Full | `FindBreakEvenPrice`, `FindBreakEvenTime`. |
+| Uniswap V3 | Full | Both primitives, full-range and concentrated-range (uses `lwr_tick`/`upr_tick` for the range-scale factor). |
+| Balancer | Deferred (v2.1) | New derivation needed: weighted-pool IL `α^w + (1-w)·α^(w-1) - 1` doesn't have a general closed-form inverse; Newton iteration converges cleanly but the symmetric upside/downside-α framing needs work. |
+| Stableswap | Deferred (v2.1) | New derivation needed over the invariant; mirrors `AssessDepegRisk`'s ε ↔ δ fixed-point but inverted to solve for the δ where fees compensate IL. |
+
+Bal/Ssw extensions are Bucket B in `DEFIPY_V2_AGENTIC_PLAN` — half-day each, deferred until demand surfaces.
 
 ## MCP tool exposure
 
