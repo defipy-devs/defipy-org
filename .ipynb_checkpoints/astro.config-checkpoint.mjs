@@ -30,13 +30,6 @@ export default defineConfig({
 				'./src/styles/custom.css',
 				'katex/dist/katex.min.css',
 			],
-			// Component overrides. The Head override appends Vercel Web
-			// Analytics (server-side pageviews, blocker-resistant) to
-			// Starlight's default <head>. GA4 stays in the head: array
-			// below — both analytics tools fire in parallel.
-			components: {
-				Head: './src/components/Head.astro',
-			},
 			head: [
 				{
 					tag: 'script',
@@ -57,9 +50,6 @@ export default defineConfig({
 			//   Default-collapsed groups: Tutorials, Primitive API, Protocol API,
 			//     Roadmap. These are deeper / longer trees that would dominate the
 			//     sidebar if always expanded.
-			//   Sub-groups inside Concepts (State Twin, Agent Integration) are
-			//     default-collapsed so the parent Concepts list stays a clean
-			//     5-item overview that expands when the user clicks in.
 			//   Starlight rule: omitting `collapsed` ⇒ open. `collapsed: true` ⇒
 			//     starts closed but auto-expands when the user is inside that section.
 			sidebar: [
@@ -88,38 +78,19 @@ export default defineConfig({
 
 				// Concepts — narrative / explanatory pages. Pairs with the
 				// API sections below in the scikit-learn pattern: User Guide
-				// (concepts) + API (reference). State Twin and Agent
-				// Integration are sub-groups (default-collapsed) so the
-				// top-level Concepts list reads as five high-level entries
-				// instead of ten flat siblings.
+				// (concepts) + API (reference).
 				{
 					label: 'Concepts',
 					items: [
 						{ label: 'Core Primitives', slug: 'core-primitives' },
 						{ label: 'Agentic Primitives', slug: 'agentic-primitives' },
 						{ label: 'The Primitive Contract', slug: 'primitive-contract' },
-						{
-							label: 'State Twin',
-							collapsed: true,
-							items: [
-								{ label: 'Concept', slug: 'twin-concept' },
-								{ label: 'LiveProvider', slug: 'live-provider' },
-								// PoolSnapshot deferred — content lives in Twin Concept's
-								// PoolSnapshot class block. Split out when v2.1 sweep ships:
-								// { label: 'PoolSnapshot', slug: 'pool-snapshot' },
-							],
-						},
-						{
-							label: 'Agent Integration',
-							collapsed: true,
-							items: [
-								{ label: 'Overview', slug: 'agentic-overview' },
-								{ label: 'Tool Schemas', slug: 'agentic-tool-schemas' },
-								{ label: 'Binding to Claude', slug: 'binding-to-claude' },
-								{ label: 'Binding to Other LLMs', slug: 'binding-to-other-llms' },
-								{ label: 'MCP Demo', slug: 'mcp-demo' },
-							],
-						},
+						{ label: 'Twin Concept', slug: 'twin-concept' },
+						{ label: 'Agentic Overview', slug: 'agentic-overview' },
+						{ label: 'Tool Schemas', slug: 'agentic-tool-schemas' },
+						{ label: 'Binding to Claude', slug: 'binding-to-claude' },
+						{ label: 'Binding to Other LLMs', slug: 'binding-to-other-llms' },
+						{ label: 'MCP Demo', slug: 'mcp-demo' },
 					],
 				},
 

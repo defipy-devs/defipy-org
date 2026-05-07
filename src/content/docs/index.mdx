@@ -73,7 +73,19 @@ print(f"IL %:         {result.il_percentage:.4f}")
 print(f"Current val:  {result.current_value:.4f}")
 ```
 
-`MockProvider` ships canonical synthetic pools; `StateTwinBuilder` turns a snapshot into a usable exchange object; any primitive runs against it. The same pattern works against live chain state once `LiveProvider` ships in v2.1 — the primitives don't care where the pool state came from.
+`MockProvider` ships canonical synthetic pools; `StateTwinBuilder` turns a snapshot into a usable exchange object; any primitive runs against it. The same pattern works against live chain state via `LiveProvider` — the primitives don't care where the pool state came from:
+
+```python
+from defipy.twin import LiveProvider, StateTwinBuilder
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+lp = StateTwinBuilder().build(
+    provider.snapshot("uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc")
+)
+# lp now reflects real WETH/USDC V2 chain state — same primitive interface
+```
+
+`LiveProvider` requires the `[chain]` install extra; see [LiveProvider](/live-provider/) for V2 + V3 examples and the full surface.
 
 ## What makes DeFiPy different
 
@@ -111,9 +123,9 @@ Most Python DeFi libraries wrap chain queries from The Graph. DeFiPy ships the *
   </TabItem>
   <TabItem label="Onchain (chain reads)">
     ```bash
-    pip install defipy[book]
+    pip install defipy[chain]
     ```
-    Adds [Web3Scout](https://github.com/defipy-devs/web3scout) for live chain integration — event monitoring, ABI loading, token fetching. Used by chapter 9 of the book.
+    Adds [Web3Scout](https://github.com/defipy-devs/web3scout) and `web3.py` for live chain integration via `LiveProvider`. The `[book]` extra carries the same packages with textbook-chapter-9 framing — either works for either purpose.
   </TabItem>
 </Tabs>
 
@@ -140,7 +152,7 @@ DeFiPy unifies four protocol-specific Python libraries under one consistent surf
   <LinkCard
     title="Web3Scout"
     href="https://github.com/defipy-devs/web3scout"
-    description="Onchain event monitoring. ABI loaders, token fetchers, pool discovery. Used by the optional [book] extra for live chain reads."
+    description="Onchain event monitoring. ABI loaders, token fetchers, pool discovery. Used by the optional [chain] and [book] extras for live chain reads."
   />
 </CardGrid>
 
