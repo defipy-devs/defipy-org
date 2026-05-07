@@ -3,22 +3,39 @@ title: "LiveProvider"
 description: "Build State Twins from real on-chain pool state. Uniswap V2 and V3 ship in v2.1; Balancer and Stableswap follow in v2.2."
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 `LiveProvider` reads pool state directly from a chain RPC and turns it into a `PoolSnapshot`. From there, `StateTwinBuilder` constructs a usable exchange object — and every primitive in DeFiPy works against it the same way it works against a `MockProvider` recipe.
 
 v2.1 supports **Uniswap V2 and V3**. Balancer and Stableswap LiveProvider implementations are v2.2 work. For those protocols today, use [MockProvider](/twin-concept/) recipes.
 
 ## Install
 
-LiveProvider lives in the core package, but the chain-reading machinery (web3, web3scout) is an optional install:
+LiveProvider lives in the core package, but the chain-reading machinery (web3, web3scout) is an optional install. Two install paths cover the common cases:
 
-```bash
-pip install defipy[chain]
-```
+<Tabs>
+  <TabItem label="Chain reads only">
+    ```bash
+    pip install 'defipy[chain]'
+    ```
+    Adds `web3.py` and `web3scout` on top of the core install. Use this when you want LiveProvider for analytics or simulation, without the MCP server layer.
+  </TabItem>
+  <TabItem label="Agentic (chain + MCP)">
+    ```bash
+    pip install 'defipy[agentic]'
+    ```
+    The canonical *Python SDK for Agentic DeFi* full-stack install. Composes `[chain]` and `[mcp]` in one step — LiveProvider plus the MCP server SDK for serving DeFiPy primitives as tools to Claude Desktop, Claude Code, or any MCP-compatible client. Equivalent to `pip install 'defipy[chain,mcp]'` but spelled with intent.
+  </TabItem>
+</Tabs>
 
-This adds `web3.py` and `web3scout` on top of the core install. Without `[chain]`, importing `LiveProvider` works but calling `.snapshot()` raises an import error pointing at the missing dependencies.
+Without `[chain]` (or `[agentic]`), importing `LiveProvider` works but calling `.snapshot()` raises an import error pointing at the missing dependencies.
+
+:::note[zsh users]
+Wrap install specs with extras in single quotes — e.g. `pip install 'defipy[agentic]'` — so zsh doesn't glob the brackets. Without the quotes you'll see `zsh: no matches found`. Bash users can use either form.
+:::
 
 :::note
-The `[chain]` extra pins `web3 < 7.0` because `web3scout 0.2.0` depends on `eth_utils.abi.get_abi_input_types`, which was removed in web3 7. If web3 7.x is already installed for other reasons, `pip install defipy[chain]` will downgrade it. Tracking upstream as v2.2 work.
+Both `[chain]` and `[agentic]` extras pin `web3 < 7.0` because `web3scout 0.2.0` depends on `eth_utils.abi.get_abi_input_types`, which was removed in web3 7. If web3 7.x is already installed for other reasons, the install will downgrade it. Tracking upstream as v2.2 work.
 :::
 
 ## Quickstart — Uniswap V2
@@ -62,6 +79,10 @@ health = CheckPoolHealth().apply(lp)
 print(f"V3 fee:   {health.fee_pips} pips")
 print(f"TVL ratio: {health.tvl_in_token0 / health.tvl_in_token1:.2e}")
 ```
+
+:::note
+The canonical USDC/WETH V3 pool at this address is the **500bps** (0.05%) tier on mainnet. Earlier draft documentation labeled it 3000bps; the on-chain truth is 500bps. The `health.fee_pips` value will report `500` for this pool.
+:::
 
 ## The pool_id format
 
@@ -161,9 +182,47 @@ if snap.block_number is not None:
 
 This is the substrate consumers like caching layers, reorg detectors, or multi-chain routers build on. LiveProvider provides the data; what the consumer does with it is their concern.
 
-## Stateless across calls
+## Connection lifecycle
 
-`LiveProvider` holds no caching, no connection pool, no persistence. Each `.snapshot()` call constructs a fresh client (lazily, on first use) and returns a snapshot with no shared state across calls. If you want caching, build it on top — the `block_number` field is exactly the cache key you'd want.
+Snapshots are stateless across calls — no caching of pool state, block data, or snapshot results between `.snapshot()` invocations. Each call returns a fresh snapshot.
+
+The underlying RPC connection, however, is **cached on the `LiveProvider` instance** for efficiency. The first call to `.snapshot()` or `get_w3()` (whichever comes first) constructs the `RpcClient` lazily; subsequent calls on the same provider reuse it. Both methods share one connection per `LiveProvider` instance for its lifetime.
+
+For long-running processes that may see the connection go stale, construct a fresh `LiveProvider` periodically or build your own connection-management layer around `get_w3()`.
+
+## API
+
+`LiveProvider` exposes a small surface — a constructor, the snapshot method, and an escape hatch to the underlying web3 instance.
+
+| Method | Returns | Purpose |
+|---|---|---|
+| `LiveProvider(rpc_url: str)` | `LiveProvider` | Construct a provider against the given RPC endpoint. No chain reads happen until `.snapshot()` or `.get_w3()` is called. |
+| `.snapshot(pool_id, *, block_number=None, lwr_tick=None, upr_tick=None)` | `PoolSnapshot` | Read pool state and return a typed snapshot. `pool_id` is `"<protocol>:<address>"`. `block_number` defaults to `"latest"` (resolved once at the top of the call); pass an int for historical reads. `lwr_tick` / `upr_tick` apply to V3 pools only — they default to full-range. |
+| `.get_w3()` | `web3.Web3` | Return the underlying `web3.Web3` instance. See [Signing transactions: bring your own](#signing-transactions-bring-your-own) below. |
+
+All three respect the lazy-import contract: importing `LiveProvider` does not require `[chain]` to be installed; calling either of the two methods does. Without the install, the call surfaces a clear `ImportError` pointing at the missing extras.
+
+## Signing transactions: bring your own
+
+`LiveProvider` is **read-only by design**. The substrate exposes pool state via typed snapshots; it does not sign or send transactions. Signing infrastructure varies enormously across users — local key, hardware wallet, MPC vault, signing service, hosted custodial flow — and embedding any opinion would be wrong for most. DeFiPy stays out of the keys-and-execution layer because that's where security and policy opinions diverge most.
+
+For consumers who need to act on-chain after analysis, the underlying `web3.Web3` instance is available via `provider.get_w3()`:
+
+```python
+from defipy.twin import LiveProvider
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+w3 = provider.get_w3()
+
+# From here, your signing infrastructure takes over.
+# DeFiPy doesn't ship a signing path; you bring your own.
+latest_block = w3.eth.block_number
+chain_id = w3.eth.chain_id
+```
+
+The `web3.Web3` instance is shared with the snapshot path — both `provider.get_w3()` and `provider.snapshot(...)` use the same connection, lazily constructed on first use and reused for the life of the `LiveProvider` instance.
+
+What's not here, by design: no `provider.sign()`, no `provider.send_transaction()`, no transaction-builder pattern, no key management, no gas estimation helpers. The substrate exposes the underlying web3 instance and stops. Transaction tooling beyond `get_w3()` is the consumer's domain or sibling-library territory, not DeFiPy's.
 
 ## Error surface
 

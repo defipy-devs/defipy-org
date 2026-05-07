@@ -11,7 +11,7 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
 - [BalancerPy](https://github.com/defipy-devs/balancerpy)
 - [StableswapPy](https://github.com/defipy-devs/stableswappy)
 
-New here? The [Quick Start](/quick/) walks through the essential Core Primitives — pool setup, `Join`, `Swap` — protocol by protocol. For onchain event access, use [LiveProvider](/live-provider/). The [fork-and-evaluate worked example](/fork-evaluate/) is the canonical v2.1 demonstration of the State Twin pattern against live mainnet state.
+New here? The [Quick Start](/quick/) walks through the essential Core Primitives — pool setup, `Join`, `Swap` — protocol by protocol. For onchain event access, use [LiveProvider](/live-provider/), which demonstrates our [State Twin concept](/twin-concept/). The [fork-and-evaluate worked example](/fork-evaluate/) is the canonical v2.1 demonstration of the pattern against live mainnet state.
 
 > Older docs still live at [defipy.readthedocs.io](https://defipy.readthedocs.io/en/latest/).
 
@@ -117,17 +117,21 @@ Most Python DeFi libraries wrap chain queries from The Graph. DeFiPy ships the *
   </TabItem>
   <TabItem label="MCP server (Claude Desktop / Code)">
     ```bash
-    pip install defipy[mcp]
+    pip install 'defipy[mcp]'
     ```
     Adds the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for serving DeFiPy primitives as tools to MCP clients. See [Binding to Claude](/binding-to-claude/) for config snippets.
   </TabItem>
   <TabItem label="Onchain (chain reads)">
     ```bash
-    pip install defipy[chain]
+    pip install 'defipy[chain]'
     ```
     Adds [Web3Scout](https://github.com/defipy-devs/web3scout) and `web3.py` for live chain integration via `LiveProvider`. The `[book]` extra carries the same packages with textbook-chapter-9 framing — either works for either purpose.
   </TabItem>
 </Tabs>
+
+:::note[zsh users]
+Wrap install specs with extras in single quotes — e.g. `pip install 'defipy[mcp]'` — so zsh doesn't glob the brackets. Bash users can use either form.
+:::
 
 ## Built on the DeFiPy ecosystem
 
