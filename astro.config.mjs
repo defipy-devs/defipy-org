@@ -104,6 +104,7 @@ export default defineConfig({
 							items: [
 								{ label: 'Concept', slug: 'twin-concept' },
 								{ label: 'LiveProvider', slug: 'live-provider' },
+									{ label: 'Fork and evaluate', slug: 'fork-evaluate' },
 								// PoolSnapshot deferred — content lives in Twin Concept's
 								// PoolSnapshot class block. Split out when v2.1 sweep ships:
 								// { label: 'PoolSnapshot', slug: 'pool-snapshot' },

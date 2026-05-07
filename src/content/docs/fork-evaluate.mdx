@@ -1,0 +1,94 @@
+---
+title: "Fork and evaluate"
+description: "Pull live state once. Fork N ways. Run primitives. Decide."
+---
+
+The State Twin's strategic claim is that you can pull live chain state once, fork the in-memory twin N ways under different scenarios, run primitives against each fork, and aggregate into a recommendation — all before any execution. This page walks through the canonical worked example.
+
+The runnable artifact is [`python/examples/state_twin_fork_evaluate.py`](https://github.com/defipy-devs/defipy/blob/main/python/examples/state_twin_fork_evaluate.py) in the `defipy` repo.
+
+## Why this is interesting
+
+Reactive DeFi tools answer "what is the pool doing right now?" Forward-looking decisions need a different shape — "if the price moves -30%, where does my IL land? +30%? +10%?" The State Twin gives you that shape in memory: `LiveProvider` lands the chain state in a typed `PoolSnapshot`, `StateTwinBuilder` builds an exchange object that primitives consume, and `copy.deepcopy(lp)` gives you N independent forks. Primitives are deterministic against any twin — same inputs, same outputs, no chain calls. Forking the twin gives you a distribution; the distribution gives you a recommendation.
+
+The pattern is two-layer: substrate (chain reads + twin construction) on the bottom, scoring (scenarios + threshold) on top. DeFiPy ships the substrate. The scoring is your domain — and the demo's job is to show how cleanly the layers separate.
+
+## The demo
+
+```bash
+pip install defipy[chain]
+
+# Live RPC against USDC/WETH V3 mainnet:
+DEFIPY_LIVE_RPC=https://eth-mainnet.example.com/v2/<key> \
+    python state_twin_fork_evaluate.py --n-scenarios 50
+
+# Offline (MockProvider, no RPC needed):
+python state_twin_fork_evaluate.py --offline --n-scenarios 20
+```
+
+The fork loop is short:
+
+```python
+import copy
+from defipy.twin import LiveProvider, StateTwinBuilder
+from defipy.primitives.position import SimulatePriceMove
+
+provider = LiveProvider(rpc_url)
+snap = provider.snapshot("uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640")
+lp = StateTwinBuilder().build(snap)
+
+scenarios = [-0.30, -0.20, -0.10, 0.0, +0.10, +0.20, +0.30]
+results = []
+for pct in scenarios:
+    fork = copy.deepcopy(lp)        # independent twin per scenario
+    res = SimulatePriceMove().apply(
+        fork, price_change_pct=pct, position_size_lp=1.0,
+        lwr_tick=snap.lwr_tick, upr_tick=snap.upr_tick,
+    )
+    results.append(res)
+```
+
+That's it for the substrate side. Each `SimulatePriceMove().apply(...)` gives you a `PriceMoveScenario` dataclass with `il_at_new_price`, `value_change_pct`, and the projected position state. From there you aggregate, threshold, and recommend on your own terms.
+
+## What the output looks like
+
+```
+────────────────────────────────────────────────────────────
+State Twin — fork-and-evaluate
+────────────────────────────────────────────────────────────
+Pool:         USDC/WETH  (protocol=uniswap_v3)
+Block:        25045442  chain_id=1
+Scenarios:    n=50, price-pct range [-30.00%, +30.00%]
+Wall clock:   0.01s (fork + evaluate, excluding chain read)
+
+Distribution (across scenarios)
+  il_at_new_price : mean=-0.0041  median=-0.0029  p05=-0.0128  p95=-0.0000
+  value_change    : mean=+0.0122  median=+0.0000  p05=-0.1146  p95=+0.1749
+
+Threshold rule: rebalance if ≥70% of scenarios show IL < -5.00%
+Breaches:       0 of 50 scenarios (0.0%)
+
+RECOMMENDATION: HOLD
+────────────────────────────────────────────────────────────
+```
+
+The wall-clock note matters: the fork+evaluate step itself is sub-second at N=50. The expensive part is the single chain read at the top — once you have the twin, every additional scenario is essentially free.
+
+## Adapting it to your pool
+
+The demo's helper functions are the seams where you customize:
+
+- `build_initial_twin(...)` — swap the pool ID. Any V2 or V3 pool address works.
+- `make_scenarios(n)` — replace the uniform `[-30%, +30%]` grid with log-normal sampling, calibrated empirical scenarios, or whatever distribution your model produces.
+- `evaluate_scenarios(...)` — swap or compose primitives. `AnalyzePosition`, `CheckPoolHealth`, `DetectRugSignals`, `CalculateSlippage` all run against the same twin shape.
+- `recommend(...)` — your threshold, your rule. The demo's "70% breach at IL < -5%" is illustrative, not prescriptive.
+
+## Caveat
+
+Hand-specified scenarios are illustrative, not predictive. The substrate gives you the distribution against any scenarios you supply; the realism of those scenarios is your model's responsibility, not DeFiPy's. Calibrate to your own assumptions before acting on a recommendation.
+
+## See also
+
+- [LiveProvider](/live-provider/) — the chain-reading substrate the demo builds on
+- [State Twin Concept](/twin-concept/) — the architectural why behind the provider/builder split
+- [Installation](/installation/) — `[chain]` extra and other install options
