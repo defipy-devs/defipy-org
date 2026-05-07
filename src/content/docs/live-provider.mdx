@@ -1,0 +1,193 @@
+---
+title: "LiveProvider"
+description: "Build State Twins from real on-chain pool state. Uniswap V2 and V3 ship in v2.1; Balancer and Stableswap follow in v2.2."
+---
+
+`LiveProvider` reads pool state directly from a chain RPC and turns it into a `PoolSnapshot`. From there, `StateTwinBuilder` constructs a usable exchange object — and every primitive in DeFiPy works against it the same way it works against a `MockProvider` recipe.
+
+v2.1 supports **Uniswap V2 and V3**. Balancer and Stableswap LiveProvider implementations are v2.2 work. For those protocols today, use [MockProvider](/twin-concept/) recipes.
+
+## Install
+
+LiveProvider lives in the core package, but the chain-reading machinery (web3, web3scout) is an optional install:
+
+```bash
+pip install defipy[chain]
+```
+
+This adds `web3.py` and `web3scout` on top of the core install. Without `[chain]`, importing `LiveProvider` works but calling `.snapshot()` raises an import error pointing at the missing dependencies.
+
+:::note
+The `[chain]` extra pins `web3 < 7.0` because `web3scout 0.2.0` depends on `eth_utils.abi.get_abi_input_types`, which was removed in web3 7. If web3 7.x is already installed for other reasons, `pip install defipy[chain]` will downgrade it. Tracking upstream as v2.2 work.
+:::
+
+## Quickstart — Uniswap V2
+
+```python
+from defipy.twin import LiveProvider, StateTwinBuilder
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+
+# WETH/USDC V2 mainnet pool
+snap = provider.snapshot(
+    "uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
+)
+
+lp = StateTwinBuilder().build(snap)
+
+# Same shape as any other twin — every primitive works against it
+from defipy import CheckPoolHealth
+health = CheckPoolHealth().apply(lp)
+print(f"TVL in WETH: {health.tvl_in_token0:.2f}")
+print(f"Spot price:  {health.spot_price:.4f}")
+```
+
+## Quickstart — Uniswap V3
+
+```python
+from defipy.twin import LiveProvider, StateTwinBuilder
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+
+# USDC/WETH V3 3000bps mainnet pool
+snap = provider.snapshot(
+    "uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
+)
+
+lp = StateTwinBuilder().build(snap)
+
+# All V3 primitives work — pool health, position analysis, slippage, scenarios
+from defipy import CheckPoolHealth
+health = CheckPoolHealth().apply(lp)
+print(f"V3 fee:   {health.fee_pips} pips")
+print(f"TVL ratio: {health.tvl_in_token0 / health.tvl_in_token1:.2e}")
+```
+
+## The pool_id format
+
+The first argument to `.snapshot()` is a string of the form `"<protocol>:<address>"`:
+
+```
+uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc
+uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640
+```
+
+Address casing is normalized internally — lowercase, uppercase, or EIP-55 checksum-mixed all work. The protocol prefix selects the read path. Valid protocols:
+
+| Prefix | Status |
+|---|---|
+| `uniswap_v2` | v2.1 (works) |
+| `uniswap_v3` | v2.1 (works) |
+| `balancer` | v2.2+ (raises `NotImplementedError`) |
+| `stableswap` | v2.2+ (raises `NotImplementedError`) |
+
+Malformed `pool_id` (missing colon, empty protocol, empty address) raises `ValueError` with a message naming the offending input and listing the valid protocols.
+
+## Block pinning
+
+By default, `LiveProvider` resolves `"latest"` to a concrete block number once at the start of `.snapshot()`, then pins every subsequent read to that block. State drift across reads inside one snapshot is impossible — you get a coherent view of the pool at one specific block.
+
+To read a historical block, pass `block_number`:
+
+```python
+# Snapshot WETH/USDC V2 at block 19,500,000
+snap = provider.snapshot(
+    "uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+    block_number=19_500_000,
+)
+```
+
+The resolved `block_number` is also written onto the snapshot itself (see [Chain context fields](#chain-context-fields) below), so downstream consumers know exactly which block the data came from.
+
+## V3 tick range — defaults and overrides
+
+For V3 pools, the snapshot represents the pool's active liquidity as if it were a single position spanning a tick range `[lwr_tick, upr_tick]`. By default the range is **full-range** — `getMinTick(tick_spacing)` to `getMaxTick(tick_spacing)` — which gives MockProvider-parity twins and works cleanly with all V3 active-liquidity primitives.
+
+To narrow the range — for example, to simulate a tighter concentrated position around the active tick — pass `lwr_tick` / `upr_tick` kwargs:
+
+```python
+# Tight range around active tick — useful for IL-at-concentration scenarios
+snap = provider.snapshot(
+    "uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+    lwr_tick=-600,
+    upr_tick=600,
+)
+```
+
+The amounts derived for the snapshot scale with the chosen range. Three regimes:
+
+- **Active tick inside range** — both `reserve0` and `reserve1` are nonzero
+- **Active tick at or below `lwr_tick`** — single-sided in token0; `reserve1 == 0`
+- **Active tick at or above `upr_tick`** — single-sided in token1; `reserve0 == 0`
+
+The single-sided regimes are valid V3 semantics, not error states. They reflect the real shape of a position whose range has been crossed.
+
+:::note
+v2.1 V3 LiveProvider is **active-liquidity only**. It does not walk the tick bitmap — primitives that need liquidity at non-active ticks (`AssessLiquidityDepth`, `EvaluateTickRanges` in their full forms) will see empty tick data. Active-liquidity primitives (`AnalyzePosition`, `SimulatePriceMove`, `CheckPoolHealth`, `CalculateSlippage`, `DetectRugSignals`) work fully. Tick walking pairs with `AssessLiquidityDepth` in v2.1.x or v2.2.
+:::
+
+## Reserves are decimal-adjusted floats
+
+Both V2 and V3 snapshots have `reserve0` and `reserve1` as **Python floats in whole-token units**, not raw `uint112` / `uint128` wei values. LiveProvider divides by `10 ** decimals` per token before constructing the snapshot.
+
+This matches MockProvider's contract — the same `reserve0 = 1000.0` shape — and lets `StateTwinBuilder` and every primitive consume the snapshot uniformly regardless of source. If you need the raw values, query the chain directly with `web3.py`; LiveProvider's job is to produce values that compose cleanly with the rest of DeFiPy.
+
+## Multicall batching (V3)
+
+V3 snapshots batch all pool reads (`token0`, `token1`, `slot0`, `liquidity`, `fee`, `tickSpacing`, plus `getCurrentBlockTimestamp`) into a single [Multicall3](https://github.com/mds1/multicall) `aggregate3` call. That's one RPC round trip for the V3-specific reads, plus separate sequential reads for the two tokens' `symbol` and `decimals` (which `web3scout`'s `FetchToken` doesn't fold into multicall).
+
+V2 snapshots use sequential reads — four `eth_call`s pinned to the resolved block, plus `eth_getBlockByNumber` for the timestamp. The multicall optimization buys less for V2's smaller read set.
+
+The Multicall3 contract address (`0xcA11bde05977b3631167028862bE2a173976CA11`) is hardcoded; this address is the same on every major EVM chain Multicall3 has been deployed to. Chains without Multicall3 will fail with a descriptive error — that's a v2.2 problem.
+
+## Chain context fields
+
+Every snapshot from `LiveProvider` carries three fields populated from the chain:
+
+| Field | Source |
+|---|---|
+| `block_number` | The resolved concrete block — the value of `block_number` kwarg if passed, otherwise the result of `eth_blockNumber` at the top of `.snapshot()` |
+| `timestamp` | Block header timestamp (V2) or Multicall3's `getCurrentBlockTimestamp()` pinned to the resolved block (V3) |
+| `chain_id` | `eth_chainId`, cached on the underlying `RpcClient` after first read so repeat snapshots on the same provider don't re-fetch |
+
+These fields are `Optional[int] = None` on the snapshot dataclasses. `MockProvider` leaves them None — synthetic snapshots have no chain context, and inventing fake values would be dishonest. Consumers that need chain context check for None and branch:
+
+```python
+snap = provider.snapshot("uniswap_v2:0x...")
+if snap.block_number is not None:
+    print(f"Live snapshot pinned at block {snap.block_number}")
+    print(f"Timestamp: {snap.timestamp}, Chain ID: {snap.chain_id}")
+```
+
+This is the substrate consumers like caching layers, reorg detectors, or multi-chain routers build on. LiveProvider provides the data; what the consumer does with it is their concern.
+
+## Stateless across calls
+
+`LiveProvider` holds no caching, no connection pool, no persistence. Each `.snapshot()` call constructs a fresh client (lazily, on first use) and returns a snapshot with no shared state across calls. If you want caching, build it on top — the `block_number` field is exactly the cache key you'd want.
+
+## Error surface
+
+| Condition | Outcome |
+|---|---|
+| Malformed `pool_id` (no colon, empty parts) | `ValueError` with message and valid-protocols list |
+| Unknown protocol prefix | `ValueError` |
+| Known-but-unimplemented protocol (`balancer`, `stableswap`) | `NotImplementedError` pointing at v2.2 |
+| `lwr_tick >= upr_tick` for V3 | `ValueError` from `LiveProvider` (caught before chain reads) |
+| RPC unreachable / pool address has no contract / multicall reverts | Underlying `web3.py` exception propagates |
+
+For V3, if any single call inside the multicall reverts, the whole snapshot fails — `allowFailure=False` is set on every call. The intent is loud failure; a half-populated snapshot is worse than no snapshot.
+
+## What's coming v2.2 and beyond
+
+- **Balancer LiveProvider** — V3 of the same pattern for Balancer 2-asset weighted pools
+- **Stableswap LiveProvider** — same for Curve-style stableswap pools
+- **V3 tick bitmap walking** — pairs with `AssessLiquidityDepth`, enables non-active-tick analyses
+- **Anvil fork support** — optional CI lane against a forked node for higher-confidence integration tests
+
+See the [Roadmap](/roadmap/) for the full v2.2+ timeline.
+
+## See also
+
+- [State Twin Concept](/twin-concept/) — the architectural why behind the provider/builder split
+- [Installation](/installation/) — `[chain]` extra and other install options
+- [defipy.twin module reference](/agentic-twin-reference/) — the full export list

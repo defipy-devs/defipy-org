@@ -15,7 +15,7 @@ The diagram above shows the architecture most agentic-DeFi stacks ship today. Ch
 
 ## The State Twin
 
-The State Twin is the missing layer. It mirrors AMM state off-chain into a canonical, typed, replayable form. Every primitive in DeFiPy takes an `lp` argument — an exchange object that holds reserves, fees, tick state, weights, amplification coefficient, whatever the protocol needs. The State Twin is what builds that `lp` from a declarative snapshot, regardless of where the snapshot came from. `MockProvider` builds twins from canonical recipes for notebooks and demos. `LiveProvider` (v2.1) will build them from live chain reads. A custom provider can build them from a CSV file, a database row, a cached block, or a hypothetical scenario the analyst made up. The primitive can't tell the difference.
+The State Twin is the missing layer. It mirrors AMM state off-chain into a canonical, typed, replayable form. Every primitive in DeFiPy takes an `lp` argument — an exchange object that holds reserves, fees, tick state, weights, amplification coefficient, whatever the protocol needs. The State Twin is what builds that `lp` from a declarative snapshot, regardless of where the snapshot came from. `MockProvider` builds twins from canonical recipes for notebooks and demos. `LiveProvider` builds them from live chain reads (V2 + V3). A custom provider can build them from a CSV file, a database row, a cached block, or a hypothetical scenario the analyst made up. The primitive can't tell the difference.
 
 ![](/img/state_twin_concept.svg)
 
@@ -27,7 +27,7 @@ Reactive agents have a small action space, bounded by chain time. Proactive agen
 
 ## Why this works mechanically
 
-Every primitive in DeFiPy takes an `lp` argument. If the primitive had to know whether that `lp` was mocked or live, the testability story would collapse — and so would the story of "the same interface for a notebook quant and for an agent." The twin is the indirection that keeps both stories clean. A quant in a notebook calls `AnalyzePosition().apply(lp, ...)` against a MockProvider twin. An agent via MCP calls the same primitive against the same twin shape. A v2.1 backtest calls it against a LiveProvider twin built from a historical block. Same primitive, same interface, three regimes — because the State Twin abstracts away where the state came from.
+Every primitive in DeFiPy takes an `lp` argument. If the primitive had to know whether that `lp` was mocked or live, the testability story would collapse — and so would the story of "the same interface for a notebook quant and for an agent." The twin is the indirection that keeps both stories clean. A quant in a notebook calls `AnalyzePosition().apply(lp, ...)` against a MockProvider twin. An agent via MCP calls the same primitive against the same twin shape. A backtest calls it against a LiveProvider twin built from a historical block. Same primitive, same interface, three regimes — because the State Twin abstracts away where the state came from.
 
 The provider/builder split is what makes this composition work. Providers know about *sources*. Builders know about *shapes*. Snapshots are the canonical hand-off between them. Add a new source (a fork node, a database, a custom mock) and you write a new provider — the builder doesn't change. Add a new protocol (a new AMM family) and you extend the builder — providers don't change. This is the substrate's extensibility surface, and it's why the State Twin generalizes beyond DeFiPy specifically. The pattern is the contribution; the implementation is the proof.
 
@@ -36,7 +36,7 @@ The provider/builder split is what makes this composition work. Providers know a
 - **Class**: `defipy.twin.StateTwinProvider`
 
   > - **Purpose**: Abstract base class for any source of pool snapshots. Subclass it to define where snapshots come from.
-  > - **Usage**: `class MyProvider(StateTwinProvider): def snapshot(self, pool_id: str) -> PoolSnapshot: ...`
+  > - **Usage**: `class MyProvider(StateTwinProvider): def snapshot(self, pool_id: str, **kwargs) -> PoolSnapshot: ...`
   > - **Example**: a worked example for custom providers is included below.
 
 - **Class**: `defipy.twin.MockProvider`
@@ -46,11 +46,12 @@ The provider/builder split is what makes this composition work. Providers know a
   > - **Example**: `provider = MockProvider()`
   > - **Recipes**: `eth_dai_v2`, `eth_dai_v3`, `eth_dai_balancer_50_50`, `usdc_dai_stableswap_A10`
 
-- **Class**: `defipy.twin.LiveProvider` *(v2.1, stub in v2.0)*
+- **Class**: `defipy.twin.LiveProvider`
 
-  > - **Purpose**: Build twins from live chain reads. Constructor signature is stable (`LiveProvider(rpc_url)`) so v2.1 adoption is not an API break; calling `.snapshot()` in v2.0 raises `NotImplementedError`.
-  > - **Usage**: `LiveProvider(rpc_url="https://...")`
-  > - **Status**: Ships as a stub in v2.0. Functional implementation lands in v2.1.
+  > - **Purpose**: Build twins from live chain reads (Uniswap V2 + V3). Requires the `[chain]` install extra.
+  > - **Usage**: `LiveProvider(rpc_url="https://...").snapshot("uniswap_v2:0xADDR")`
+  > - **Status**: V2 + V3 ship in v2.1. Balancer + Stableswap LiveProviders are v2.2 work.
+  > - **See**: [LiveProvider](/live-provider/) for the full surface — pool_id format, block pinning, decimal-adjusted reserves, V3 active-liquidity reads.
 
 - **Class**: `defipy.twin.StateTwinBuilder`
 
@@ -60,7 +61,7 @@ The provider/builder split is what makes this composition work. Providers know a
 
 - **Class**: `defipy.twin.PoolSnapshot`
 
-  > - **Purpose**: Declarative, protocol-agnostic representation of pool state. The discriminated union base class; subclasses (`V2PoolSnapshot`, `V3PoolSnapshot`, `BalancerPoolSnapshot`, `StableswapPoolSnapshot`) carry protocol-specific fields.
+  > - **Purpose**: Declarative, protocol-agnostic representation of pool state. The discriminated union base class; subclasses (`V2PoolSnapshot`, `V3PoolSnapshot`, `BalancerPoolSnapshot`, `StableswapPoolSnapshot`) carry protocol-specific fields. As of v2.1, every snapshot carries optional chain-context fields (`block_number`, `timestamp`, `chain_id`), populated by `LiveProvider` and left as `None` by `MockProvider`.
   > - **Usage**: `V2PoolSnapshot(pool_id, token0_name, token1_name, reserve0, reserve1)`
   > - **Example**: `snap = V2PoolSnapshot(pool_id="custom_eth_usdc", token0_name="ETH", token1_name="USDC", reserve0=500, reserve1=1000000)`
 
@@ -68,12 +69,13 @@ The provider/builder split is what makes this composition work. Providers know a
 
 - **Class**: `defipy.twin.StateTwinProvider`
 
-  > - **Purpose**: Return a pool snapshot for a given pool identifier. `pool_id` semantics are provider-specific — a recipe name for MockProvider, a chain address for LiveProvider.
+  > - **Purpose**: Return a pool snapshot for a given pool identifier. `pool_id` semantics are provider-specific — a recipe name for MockProvider, a `"<protocol>:<address>"` string for LiveProvider.
   >
   > - **Methods**:  
-  >   - `snapshot(pool_id: str) -> PoolSnapshot`  
+  >   - `snapshot(pool_id: str, **kwargs) -> PoolSnapshot`  
   >     - **Parameters**:  
   >       - `pool_id`: Provider-specific identifier.
+  >       - `**kwargs`: Provider-specific options. `LiveProvider` accepts `block_number=N` for historical pinning and `lwr_tick`/`upr_tick` for V3 tick range; `MockProvider` silently absorbs unknown kwargs for cross-provider portability.
   >
   > - **Output**: A `PoolSnapshot` of the appropriate protocol subclass.
 
@@ -136,7 +138,7 @@ print(health.spot_price, health.tvl_in_token0)
 
 **Example 3: Write a custom provider**
 
-A custom provider subclasses `StateTwinProvider` and implements `snapshot(pool_id)`. Same contract as MockProvider; different source of truth. This is the hook for fork state, cached blocks, or any snapshot source that isn't live chain (v2.1) and isn't a canned recipe.
+A custom provider subclasses `StateTwinProvider` and implements `snapshot(pool_id, **kwargs)`. Same contract as MockProvider; different source of truth. This is the hook for fork state, cached blocks, or any snapshot source that isn't live chain (`LiveProvider`'s job) and isn't a canned recipe.
 
 ``` python
 from defipy.twin import StateTwinProvider, V2PoolSnapshot
@@ -147,7 +149,7 @@ class CSVProvider(StateTwinProvider):
     def __init__(self, csv_path: str):
         self.rows = self._load(csv_path)
 
-    def snapshot(self, pool_id: str):
+    def snapshot(self, pool_id: str, **kwargs):
         row = self.rows[pool_id]
         return V2PoolSnapshot(
             pool_id     = pool_id,
@@ -163,7 +165,4 @@ class CSVProvider(StateTwinProvider):
 
 :::note
 MockProvider returns bare exchange objects via the snapshot → builder path; it does not return the test-context dataclass (`.eth`, `.dai`, `.entry_x_amt`, etc.) that `conftest` fixtures provide. Test context is the caller's responsibility.
-:::
-:::note
-`PoolSnapshot` stays minimal in v2.0 — no `block_number`, `timestamp`, or `chain_id`. Those are LiveProvider concerns and ship in v2.1 when they're actually needed.
 :::
