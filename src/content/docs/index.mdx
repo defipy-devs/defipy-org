@@ -99,7 +99,7 @@ Most Python DeFi libraries wrap chain queries from The Graph. DeFiPy ships the *
     DeFiPy is the foundation. It has zero LLM dependencies and zero web3 dependencies in the core install. Build whatever agent you want on top — DeFiMind, LangChain, custom MCP server, your own framework.
   </Card>
   <Card title="Composable typed primitives" icon="rocket">
-    Every primitive follows the same contract: stateless construction, computation at `.apply()`, typed dataclass return. Same call shape from a Jupyter notebook or from Claude calling it as a tool.
+    Every primitive follows the same interface: stateless construction, computation at `.apply()`, typed dataclass return. Same call shape from a Jupyter notebook or from Claude calling it as a tool.
   </Card>
   <Card title="Plan, don't execute" icon="seti:lock">
     No signing keys. Ever. Primitives like `OptimalDepositSplit` and `EvaluateRebalance` return structured plans the caller can inspect, serialize, approve, or hand to whatever execution runtime they trust.

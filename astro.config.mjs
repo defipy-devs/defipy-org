@@ -97,7 +97,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Core Primitives', slug: 'core-primitives' },
 						{ label: 'Agentic Primitives', slug: 'agentic-primitives' },
-						{ label: 'The Primitive Contract', slug: 'primitive-contract' },
+						{ label: 'The Primitive Interface', slug: 'primitive-interface' },
 						{
 							label: 'State Twin',
 							collapsed: true,

@@ -1,9 +1,9 @@
 ---
-title: "The Primitive Contract"
-description: "Every analytics primitive in DeFiPy follows the same three-line contract: stateless construction, computation at apply(), typed dataclass return."
+title: "The Primitive Interface"
+description: "Every analytics primitive in DeFiPy follows the same three-line interface: stateless construction, computation at apply(), typed dataclass return."
 ---
 
-Every analytics primitive in DeFiPy follows the same three-line contract:
+Every analytics primitive in DeFiPy follows the same three-line interface:
 
 ```python
 primitive = SomePrimitive()                     # Stateless construction
@@ -11,7 +11,7 @@ result    = primitive.apply(lp, *args)          # Computation
 value     = result.<field>                      # Typed dataclass access
 ```
 
-This contract is what makes the primitives composable, testable, and exposable as LLM tools without any adapter layer. A quant in a notebook calls `AnalyzePosition(...).apply(...)` and reads `result.il_percentage`. The MCP server wrapping that same primitive for an LLM dispatches `AnalyzePosition(...).apply(...)` and returns `result.il_percentage` — exactly the same code path. No translation, no branching, no agent-specific glue.
+This interface is what makes the primitives composable, testable, and exposable as LLM tools without any adapter layer. A quant in a notebook calls `AnalyzePosition(...).apply(...)` and reads `result.il_percentage`. The MCP server wrapping that same primitive for an LLM dispatches `AnalyzePosition(...).apply(...)` and returns `result.il_percentage` — exactly the same code path. No translation, no branching, no agent-specific glue.
 
 Three invariants hold across all 21 primitives:
 

@@ -25,9 +25,9 @@ Per-class API pages for each of the 21 agentic primitives are in progress. The l
 | [Portfolio](/agentic-primitives/portfolio/) | `AggregatePortfolio` | Multi-position aggregation across protocols, with worst-first PnL ranking. |
 | [Break-Even](/agentic-primitives/break-even/) | `FindBreakEvenPrice`, `FindBreakEvenTime` | At what price / how long until fees break even with IL? (V2 + V3.) |
 
-## The agentic primitive contract
+## The agentic primitive interface
 
-Every agentic primitive follows the same contract:
+Every agentic primitive follows the same interface:
 
 ```python
 result = ClassName().apply(lp, ...args)
@@ -43,7 +43,7 @@ For the dataclass definitions themselves see [Result Dataclasses](/agentic-resul
 ## See also
 
 - [Agentic Primitives](/agentic-primitives/) — concepts and overview
-- [The Primitive Contract](/primitive-contract/) — design rationale
+- [The Primitive Interface](/primitive-interface/) — design rationale
 - [Tool Schemas](/agentic-tool-schemas/) — MCP-format schemas for LLM tool-use
 - [Twin Reference](/agentic-twin-reference/) — the `defipy.twin` State Twin API
 - [Tools Reference](/agentic-tools-reference/) — the `defipy.tools` schema-emission API

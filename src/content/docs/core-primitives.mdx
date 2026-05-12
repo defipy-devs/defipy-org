@@ -5,7 +5,7 @@ description: "Cross-protocol execution dispatchers — Join, Swap, AddLiquidity,
 
 Core Primitives are the cross-protocol execution dispatchers that have been the recommended DeFiPy interface since v1.0. They handle pool initialization, swapping, liquidity management, and quoting across Uniswap V2/V3, Balancer, and Stableswap through a single abstract interface.
 
-These primitives **mutate pool state** — they are execution operations (mint, burn, swap, zap). For read-only analytics (position analysis, risk assessment, price scenarios), see [The Primitive Contract](/primitive-contract/).
+These primitives **mutate pool state** — they are execution operations (mint, burn, swap, zap). For read-only analytics (position analysis, risk assessment, price scenarios), see [The Primitive Interface](/primitive-interface/).
 
 **Availability**
 
@@ -31,7 +31,7 @@ These primitives **mutate pool state** — they are execution operations (mint, 
 
 **Relationship to other sections**
 
-Core Primitives and [The Primitive Contract](/primitive-contract/) are both abstract — they dispatch across protocols without the caller knowing protocol details. The distinction is what they do:
+Core Primitives and [The Primitive Interface](/primitive-interface/) are both abstract — they dispatch across protocols without the caller knowing protocol details. The distinction is what they do:
 
 - **Core Primitives** mutate pool state (execution: mint, burn, swap, zap)
 - **Agentic Primitives** read pool state and return analytics (position analysis, risk, scenarios)

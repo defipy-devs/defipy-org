@@ -3,7 +3,7 @@ title: "Agentic Primitives"
 description: "21 stateless, typed analytics primitives that answer questions about DeFi positions, pools, and risk. Composable, MCP-ready, and identical from a notebook or an LLM."
 ---
 
-Agentic Primitives are stateless, typed analytics functions that answer questions about DeFi positions, pools, and risk. They follow a three-line contract: stateless construction, computation at `.apply()`, typed dataclass return. Every primitive works identically whether called from a notebook or from an LLM via the MCP server. See [The Primitive Contract](/primitive-contract/) for the contract invariants.
+Agentic Primitives are stateless, typed analytics functions that answer questions about DeFi positions, pools, and risk. They follow a three-line interface: stateless construction, computation at `.apply()`, typed dataclass return. Every primitive works identically whether called from a notebook or from an LLM via the MCP server. See [The Primitive Interface](/primitive-interface/) for the interface invariants.
 
 These primitives **read pool state** — they are analytics operations (position decomposition, risk assessment, price scenarios). For execution operations that mutate pool state (mint, burn, swap, zap), see [Core Primitives](/core-primitives/).
 

@@ -19,9 +19,9 @@ For the conceptual overview and the dispatcher-design rationale, see [Core Primi
 | [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) | Single-asset zap-out — V2/V3 burn + auto-swap to one token. Bal/Ssw don't need it; their `RemoveLiquidity` already takes `token_out`. | ✅ | ✅ | ❌ | ❌ |
 | [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, reserve, amount, LP↔token). The cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.1. | ✅ | ✅ | 🔜 | 🔜 |
 
-## Common contract
+## Common interface
 
-Every Core primitive follows the DeFiPy contract — with two real exceptions worth pinning down before you start scripting.
+Every Core primitive follows the DeFiPy interface — with two real exceptions worth pinning down before you start scripting.
 
 ```python
 result = ClassName().apply(lp, ...args)
@@ -39,6 +39,6 @@ result = ClassName().apply(lp, ...args)
 ## See also
 
 - [Core Primitives](/core-primitives/) — narrative / conceptual overview
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants for every dispatcher
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants for every dispatcher
 - [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — end-to-end runnable walkthrough of every Core primitive
 - [Protocol API](/api/protocol/uniswap-v2/) — protocol-specific factories and exchange classes that Core primitives dispatch to
