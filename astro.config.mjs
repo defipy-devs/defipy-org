@@ -69,7 +69,6 @@ export default defineConfig({
 				{
 					label: 'DeFiPy Ecosystem',
 					items: [
-						{ label: 'Book', slug: 'ecosystem/book' },
 						{ label: 'Courses', slug: 'ecosystem/courses' },
 						{ label: 'Hackathons', slug: 'ecosystem/hackathons' },
 						{ label: 'Presentations', slug: 'ecosystem/presentations' },
