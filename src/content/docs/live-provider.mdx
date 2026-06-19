@@ -113,10 +113,12 @@ snap = provider.snapshot(
 
 lp = StateTwinBuilder().build(snap)
 
-# Same shape as any twin — every primitive works against it
-from defipy import CheckPoolHealth
-health = CheckPoolHealth().apply(lp)
-print(f"Spot price: {health.spot_price:.4f}")
+# The snapshot carries the live pool state; lp is a BalancerExchange.
+print(f"{snap.token0_name}/{snap.token1_name}  weights {snap.weight0}/{snap.weight1}")
+print(f"reserves: {snap.reserve0:.4f} / {snap.reserve1:.4f}")
+
+# Balancer-aware primitives take the twin from here — AnalyzeBalancerPosition,
+# SimulateBalancerPriceMove, CompareProtocols. (CheckPoolHealth is V2/V3-only.)
 ```
 
 v2.2 covers **2-asset weighted pools**. A pool with more than two tokens raises `NotImplementedError`.
@@ -137,11 +139,12 @@ snap = provider.snapshot(
 
 lp = StateTwinBuilder().build(snap)
 
-# The twin feeds Stableswap-aware primitives the same way MockProvider does:
-# AnalyzeStableswapPosition, AssessDepegRisk, SimulateStableswapPriceMove.
+print(f"coins:    {snap.token_names}")
+print(f"reserves: {snap.reserves}")
+print(f"A:        {snap.A}")
 ```
 
-v2.2 covers **plain pools (2–3 coins)** — DAI/USDC/USDT 3pool is the canonical target. Rate-bearing pools (metapools, LSD pools) carry per-token rates and are out of scope.
+v2.2 covers **plain pools (2–3 coins)** — DAI/USDC/USDT 3pool is the canonical target. One boundary worth knowing: the **read path handles 2–3 coins, but the Stableswap position-analysis primitives (`AnalyzeStableswapPosition`, `AssessDepegRisk`) are 2-asset** — a 3pool twin reads and inspects fine, but those primitives expect a 2-coin pool. Rate-bearing pools (metapools, LSD pools) carry per-token rates and are out of scope.
 
 ## The pool_id format
 
