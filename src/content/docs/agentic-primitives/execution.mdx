@@ -18,8 +18,8 @@ Execution analytics — slippage, price impact, MEV exposure — are V2/V3 only 
 |---|---|---|
 | Uniswap V2 | Full | `CalculateSlippage`, `DetectMEV`. |
 | Uniswap V3 | Full | Both primitives. `max_size_at_1pct` is V2-only on `CalculateSlippage` (V3 tick-walking infra not yet implemented). |
-| Balancer | Deferred (v2.1) | Sibling primitives or protocol-dispatching extension planned; Bucket A. Math is in `BalancerExchange.get_amount_out`. |
-| Stableswap | Deferred (v2.1) | Same as Balancer; math in `StableswapExchange.get_amount_out`. |
+| Balancer | Deferred (v2.3) | Sibling primitives or protocol-dispatching extension planned; Bucket A. Math is in `BalancerExchange.get_amount_out`. |
+| Stableswap | Deferred (v2.3) | Same as Balancer; math in `StableswapExchange.get_amount_out`. |
 
 Closing this gap also unblocks full [`CompareProtocols.slippage_at_amount`](/agentic-primitives/comparison/compare-protocols/) plumbing.
 

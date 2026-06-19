@@ -18,8 +18,8 @@ V2/V3 only in v2.0. The closed-form upside/downside α framing maps cleanly to c
 |---|---|---|
 | Uniswap V2 | Full | `FindBreakEvenPrice`, `FindBreakEvenTime`. |
 | Uniswap V3 | Full | Both primitives, full-range and concentrated-range (range-scale factor `k = √r/(√r-1)`). |
-| Balancer | Deferred (v2.1) | Weighted-pool IL `α^w + (1-w)·α^(w-1) - 1` doesn't have a general closed-form inverse; Newton iteration converges cleanly but the symmetric upside/downside-α framing needs work. |
-| Stableswap | Deferred (v2.1) | Fresh derivation needed over the invariant; mirrors `AssessDepegRisk`'s ε ↔ δ fixed-point but inverted. |
+| Balancer | Deferred (v2.3) | Weighted-pool IL `α^w + (1-w)·α^(w-1) - 1` doesn't have a general closed-form inverse; Newton iteration converges cleanly but the symmetric upside/downside-α framing needs work. |
+| Stableswap | Deferred (v2.3) | Fresh derivation needed over the invariant; mirrors `AssessDepegRisk`'s ε ↔ δ fixed-point but inverted. |
 
 ## MCP tool exposure
 

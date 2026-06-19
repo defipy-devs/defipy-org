@@ -17,8 +17,8 @@ V2/V3 only.
 |---|---|
 | Uniswap V2 | `FindBreakEvenTime(blocks_per_day=7200).apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, holding_period_days)` |
 | Uniswap V3 | `FindBreakEvenTime(blocks_per_day=7200).apply(lp, lp_init_amt, entry_x_amt, entry_y_amt, holding_period_days, lwr_tick, upr_tick)` |
-| Balancer | ❌ Deferred (v2.1) — same derivation gap as `FindBreakEvenPrice` |
-| Stableswap | ❌ Deferred (v2.1) |
+| Balancer | ❌ Deferred (v2.3) — same derivation gap as `FindBreakEvenPrice` |
+| Stableswap | ❌ Deferred (v2.3) |
 
 ## Constructor parameters
 
@@ -106,5 +106,5 @@ Position is already net-positive — `days_to_break_even = 0.0`, `diagnosis = al
 
 - [`FindBreakEvenPrice`](/agentic-primitives/break-even/find-break-even-price/) — price-based break-even
 - [`AnalyzePosition`](/agentic-primitives/position-analysis/analyze-position/) — composed leaf for current IL + fees
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants
 - **MCP tool exposure:** Not in the curated 10. Break-even questions are typically derived LLM-side after `AnalyzePosition`.

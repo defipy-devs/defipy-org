@@ -49,14 +49,14 @@ provider = MockProvider()
 builder = StateTwinBuilder()
 lp_v3 = builder.build(provider.snapshot("eth_dai_v3"))
 
-# MockProvider exposes a single V3 ETH/DAI recipe (3000bps fee).
+# MockProvider exposes a single V3 ETH/DAI recipe (0.30% fee tier = 30 bps).
 # In practice you'd pass 2-3 candidates from different fee tiers
 # (500 / 3000 / 10000) of the same pair to drive the ranking.
 candidates = [
     FeeTierCandidate(
         lp=lp_v3, position_size_lp=10000.0,
         lwr_tick=45000, upr_tick=47000,
-        name="3000bps_narrow",
+        name="30bps_narrow",
     ),
 ]
 
@@ -73,10 +73,10 @@ for t in result.tiers:
 
 <div class="nb-output">{`numeraire:                       ETH
 pair:                            ETH/DAI
-ranking_by_observed_fee_yield:   ['3000bps_narrow']
-ranking_by_tvl:                  ['3000bps_narrow']
+ranking_by_observed_fee_yield:   ['30bps_narrow']
+ranking_by_tvl:                  ['30bps_narrow']
 
-  3000bps_narrow: fee_tier_bps=30, tvl=2000.0000, yield=None, in_range=True`}</div>
+  30bps_narrow: fee_tier_bps=30, tvl=2000.0000, yield=None, in_range=True`}</div>
 
 `yield=None` here because the MockProvider snapshot has no swap history — fees haven't accrued. On a real pool, the cumulative-fees / TVL ratio gives a comparable number across candidates.
 
@@ -91,5 +91,5 @@ ranking_by_tvl:                  ['3000bps_narrow']
 - [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — leaf primitive used per candidate
 - [`CheckTickRangeStatus`](/agentic-primitives/risk/check-tick-range-status/) — leaf primitive used per candidate
 - [`EvaluateTickRanges`](/agentic-primitives/optimization/evaluate-tick-ranges/) — adjacent V3 question (range-width tradeoff)
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants
 - **MCP tool exposure:** Not in the curated 10.

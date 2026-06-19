@@ -3,7 +3,7 @@ title: "Swap"
 description: "Exchange one token for another. Mutating dispatch primitive — V2/V3 take only token_in (binary pools), Balancer/Stableswap take both token_in and token_out (N-asset pools)."
 ---
 
-Exchange one token for another at the pool's current price. `Swap` is a **mutating** dispatch primitive — it routes to the protocol-specific exact-input swap underneath the unified interface. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
+Exchange one token for another at the pool's current price. `Swap` is a **mutating** dispatch primitive — it routes to the protocol-specific exact-input swap underneath the unified interface. See [The Primitive Interface](/primitive-interface/) for the cross-cutting invariants every dispatcher follows.
 
 :::note[When to use `Swap` vs `SwapDeposit`]
 Use `Swap` when you just want to trade one token for another. Use [`SwapDeposit`](/api/primitive/core/swap-deposit/) (V2/V3 only) when you want to convert a single-sided token holding into a balanced LP position in one shot — it does the swap *and* the deposit, computing the optimal swap fraction internally.
@@ -130,4 +130,4 @@ For analyzing depeg risk before swapping, see [`AssessDepegRisk`](/agentic-primi
 - [`LPQuote`](/api/primitive/core/lp-quote/) — read-only quoting for a prospective swap
 - [`CalculateSlippage`](/agentic-primitives/execution/) — non-mutating projection of a swap's price impact
 - [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants

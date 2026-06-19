@@ -105,5 +105,5 @@ A clean V2 pool: discrepancy is `~1e-12` bps (float-precision noise), well under
 - [`CheckPoolHealth`](/agentic-primitives/pool-health/check-pool-health/) — pool-level health snapshot (TVL, reserves, activity)
 - [`DetectRugSignals`](/agentic-primitives/pool-health/detect-rug-signals/) — threshold-based rug-pull detector composed over `CheckPoolHealth`
 - [`DetectMEV`](/agentic-primitives/execution/detect-mev/) — post-trade theoretical-vs-actual check (similar shape, different question)
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants
 - **MCP tool exposure:** Not in the curated 10 — niche V2-only forensic check; LLMs rarely need invariant-vs-contract divergence as a first-pass tool. Composable when explicitly requested.

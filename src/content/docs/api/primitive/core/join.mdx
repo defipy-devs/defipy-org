@@ -3,7 +3,7 @@ title: "Join"
 description: "Initialize a pool with starting liquidity. Mutating dispatch primitive — V2/V3 take token amounts, Balancer takes pool shares, Stableswap takes the amplification coefficient."
 ---
 
-Initialize a pool with starting liquidity. `Join` is a **mutating** dispatch primitive — it routes to the protocol-specific mint operation underneath the unified interface. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
+Initialize a pool with starting liquidity. `Join` is a **mutating** dispatch primitive — it routes to the protocol-specific mint operation underneath the unified interface. See [The Primitive Interface](/primitive-interface/) for the cross-cutting invariants every dispatcher follows.
 
 :::note[When to use `Join` vs `AddLiquidity`]
 Use `Join` to seed an empty pool (first mint, sets the initial reserves and price). Use [`AddLiquidity`](/api/primitive/core/add-liquidity/) to contribute to a pool that already has liquidity. Calling `Join` on a non-empty pool is undefined behavior; calling `AddLiquidity` on an empty pool fails because there is no price to match.
@@ -185,4 +185,4 @@ After `Join`, the typical pipeline is:
 - [`LPQuote`](/api/primitive/core/lp-quote/) — read-only price and conversion queries against the pool `Join` produces
 - [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — full V2 pipeline including `Join`
 - [Tutorials → Uniswap V3](/tutorials/uniswapv3/uniswap-v3/) — V3 pipeline with custom tick range
-- [The Primitive Contract](/primitive-contract/) — the cross-cutting invariants every dispatcher follows
+- [The Primitive Interface](/primitive-interface/) — the cross-cutting invariants every dispatcher follows

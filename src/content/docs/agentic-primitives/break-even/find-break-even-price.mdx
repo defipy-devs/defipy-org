@@ -17,8 +17,8 @@ Use `FindBreakEvenPrice` when you have a **fixed `fee_income`** and want to know
 |---|---|
 | Uniswap V2 | `FindBreakEvenPrice().apply(lp, lp_init_amt, fee_income)` |
 | Uniswap V3 | `FindBreakEvenPrice().apply(lp, lp_init_amt, fee_income, lwr_tick, upr_tick)` |
-| Balancer | ❌ Deferred (v2.1) — weighted-pool IL has no general closed-form inverse |
-| Stableswap | ❌ Deferred (v2.1) — fresh derivation needed over the invariant |
+| Balancer | ❌ Deferred (v2.3) — weighted-pool IL has no general closed-form inverse |
+| Stableswap | ❌ Deferred (v2.3) — fresh derivation needed over the invariant |
 
 ## Common parameters
 
@@ -111,5 +111,5 @@ At the current 100 DAI/ETH price with 50 ETH of accumulated fees (`f = 0.05`), t
 - [`SimulatePriceMove`](/agentic-primitives/price-scenarios/simulate-price-move/) — single-shock projection
 - [Uniswap V2 math](/math/univ2-math/) — the underlying IL formula
 - [Uniswap V3 math](/math/univ3-math/) — V3 range-scale factor derivation
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants
 - **MCP tool exposure:** Not in the curated 10. Break-even questions are typically derived LLM-side after `AnalyzePosition`.

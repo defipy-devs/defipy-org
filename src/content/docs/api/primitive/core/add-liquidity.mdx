@@ -3,7 +3,7 @@ title: "AddLiquidity"
 description: "Single-token-in liquidity contribution to an already-initialized pool. The matching token / share amount is computed by the dispatcher."
 ---
 
-Contribute liquidity to a pool that already has a price. `AddLiquidity` is a **mutating** dispatch primitive — every protocol accepts a single-token-in call shape, but the *meaning* of "what's calculated for you" varies. See [The Primitive Contract](/primitive-contract/) for the cross-cutting invariants every dispatcher follows.
+Contribute liquidity to a pool that already has a price. `AddLiquidity` is a **mutating** dispatch primitive — every protocol accepts a single-token-in call shape, but the *meaning* of "what's calculated for you" varies. See [The Primitive Interface](/primitive-interface/) for the cross-cutting invariants every dispatcher follows.
 
 :::note[When to use `Join` vs `AddLiquidity`]
 [`Join`](/api/primitive/core/join/) initializes an empty pool — first mint, sets the initial reserves and price. `AddLiquidity` adds to a pool that's already initialized. Calling `AddLiquidity` on an empty pool fails because there's no price to match against.
@@ -129,4 +129,4 @@ Like Balancer, the pool absorbs the imbalance internally — single-asset adds a
 - [`SwapDeposit`](/api/primitive/core/swap-deposit/) — single-sided V2/V3 deposit (does the swap-to-balance for you)
 - [`OptimalDepositSplit`](/agentic-primitives/optimization/) — non-mutating projection for V2 deposits
 - [Tutorials → Uniswap V2](/tutorials/uniswapv2/uniswap-v2/) — runnable end-to-end walkthrough
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants
