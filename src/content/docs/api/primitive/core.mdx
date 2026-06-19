@@ -17,7 +17,7 @@ For the conceptual overview and the dispatcher-design rationale, see [Core Primi
 | [`RemoveLiquidity`](/api/primitive/core/remove-liquidity/) | Burn LP shares — V2/V3 return *both* tokens at pool ratio; Balancer/Stableswap return a single specified `token_out`. | ✅ | ✅ | ✅ | ✅ |
 | [`SwapDeposit`](/api/primitive/core/swap-deposit/) | Single-asset zap-in — closed-form for V2, numeric solve for V3. Bal/Ssw don't need it; their `AddLiquidity` is already single-asset. | ✅ | ✅ | ❌ | ❌ |
 | [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) | Single-asset zap-out — V2/V3 burn + auto-swap to one token. Bal/Ssw don't need it; their `RemoveLiquidity` already takes `token_out`. | ✅ | ✅ | ❌ | ❌ |
-| [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, reserve, amount, LP↔token). The cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.1. | ✅ | ✅ | 🔜 | 🔜 |
+| [`LPQuote`](/api/primitive/core/lp-quote/) | Read-only quoting (price, reserve, amount, LP↔token). The cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.3. | ✅ | ✅ | 🔜 | 🔜 |
 
 ## Common interface
 

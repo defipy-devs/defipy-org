@@ -1,6 +1,6 @@
 ---
 title: "LPQuote"
-description: "Read-only price, reserve, and LP↔token conversion queries. The recommended cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.1."
+description: "Read-only price, reserve, and LP↔token conversion queries. The recommended cross-protocol entry point for state reads — V2/V3 today, Balancer/Stableswap planned for v2.3."
 ---
 
 `LPQuote` is the read-only quoting class for V2/V3 LP state. Unlike the other Core primitives, it doesn't follow the `ClassName().apply(...)` shape — it exposes a small set of named methods, each answering a specific question about an existing pool. **It never mutates state.**
@@ -120,10 +120,10 @@ Returns the other ERC20 in the pool's pair. Helper used internally by the amount
 |---|---|
 | Uniswap V2 | ✅ All methods |
 | Uniswap V3 | ✅ All methods (amount-style methods require `lwr_tick` / `upr_tick`) |
-| Balancer | 🔜 v2.1 — see "What's coming in v2.1" below |
-| Stableswap | 🔜 v2.1 |
+| Balancer | 🔜 v2.3 — see "What's coming in v2.3" below |
+| Stableswap | 🔜 v2.3 |
 
-### What's coming in v2.1
+### What's coming in v2.3
 
 The architectural intent is full cross-protocol `LPQuote` — same call shapes, dispatching to Balancer and Stableswap pools through the existing methods. The API surface will be **add-only**: existing V2/V3 calls won't change, and existing user code won't break. The Core Primitives availability matrix on [Core Primitives](/core-primitives/) tracks the wiring status.
 
@@ -135,7 +135,7 @@ The architectural intent is full cross-protocol `LPQuote` — same call shapes, 
 - [`SwapDeposit`](/api/primitive/core/swap-deposit/) and [`WithdrawSwap`](/api/primitive/core/withdraw-swap/) use `LPQuote` to project the post-swap state during the closed-form / numeric solves for the optimal fraction.
 - [Tutorials](/tutorials/uniswapv2/uniswap-v2/) lean on `LPQuote.get_price` and `get_reserve` for any state read in code samples that should work on both V2 and V3.
 
-When v2.1 lands, `LPQuote` will work the same way against `LiveProvider`-built twins (i.e. real chain reads) as it does against `MockProvider` snapshots today.
+`LPQuote` works the same way against `LiveProvider`-built twins (i.e. real chain reads) as it does against `MockProvider` snapshots — the V2/V3 read path is identical regardless of how the twin was constructed.
 
 ## See also
 
@@ -143,4 +143,4 @@ When v2.1 lands, `LPQuote` will work the same way against `LiveProvider`-built t
 - [`AnalyzePosition`](/agentic-primitives/position-analysis/) — built on top of `LPQuote` reads
 - [`SimulatePriceMove`](/agentic-primitives/price-scenarios/) — non-mutating projection that uses `LPQuote` internally
 - [Core Primitives](/core-primitives/) — narrative overview with the cross-protocol availability matrix
-- [The Primitive Contract](/primitive-contract/) — cross-cutting invariants
+- [The Primitive Interface](/primitive-interface/) — cross-cutting invariants

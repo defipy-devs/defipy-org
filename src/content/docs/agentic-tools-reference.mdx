@@ -55,7 +55,7 @@ Three principles drove the v2.0 tool set:
 
 - **Leaf primitives over composition.** `AnalyzePosition` ships as a tool; `AggregatePortfolio` does not. An LLM composing `AnalyzePosition` three times is a better ergonomic fit than a single tool demanding a structured multi-position payload.
 - **Protocol parity or graceful degradation.** Tools that work across all four AMM families were preferred over tools that force the LLM to understand per-protocol scope limits.
-- **Direct question-to-answer mapping.** Each tool answers a user-visible question in one call. Tools requiring multi-step reasoning (`EvaluateRebalance`, `CompareProtocols`) are deferred to v2.1+.
+- **Direct question-to-answer mapping.** Each tool answers a user-visible question in one call. Tools requiring multi-step reasoning (`EvaluateRebalance`, `CompareProtocols`) are deferred to a future release.
 
 **Dispatch boundary**
 
@@ -63,6 +63,6 @@ Dispatch parameters — `lp`, `token_in`, `depeg_token` — are absent from ever
 
 **Format support**
 
-v2.0 supports `"mcp"` only. `get_schemas("anthropic")` and `get_schemas("openai")` raise `NotImplementedError` with a v2.1 message. Both formats are derivable from MCP schemas with small envelope wrappers. See [Binding to Other LLMs](/binding-to-other-llms/).
+v2.0 supports `"mcp"` only. `get_schemas("anthropic")` and `get_schemas("openai")` raise `NotImplementedError` (multi-format support is planned for v2.3). Both formats are derivable from MCP schemas with small envelope wrappers. See [Binding to Other LLMs](/binding-to-other-llms/).
 
 For the full tool-schema walkthrough, see [Tool Schemas](/agentic-tool-schemas/). For the curation roadmap, see the [Roadmap](/roadmap/).

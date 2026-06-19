@@ -18,8 +18,6 @@ Released 2026-04-23. See [What's New in v2](/quick/whats-new-v2/) for the full f
 
 **LiveProvider — Uniswap V2 and V3.** On-chain snapshot construction for the two most common protocols. `LiveProvider(rpc_url)` was stable since v2.0; v2.1 makes `snapshot()` functional for V2 and V3 — block pinning, decimal-adjusted reserves, V3 active-liquidity reads, and Multicall3 batching. Balancer and Stableswap followed in v2.2 (below).
 
-**Multi-format tool schemas.** `get_schemas("anthropic")` and `get_schemas("openai")` — both derivable from the shipped MCP schemas with envelope-format wrappers. Reference examples in `python/examples/`.
-
 **Observability module.** `defipy.observability` replaces the v2.0 stderr-receipt pattern with a structured event sink and opt-in tracing. Composable with the MCP server's dispatch loop.
 
 **Primitive promotions.** Candidates for promotion from Python-API-only to MCP tool status, as protocol parity and dependency blockers clear:
@@ -49,11 +47,14 @@ The net effect: every primitive that already supports Balancer or Stableswap can
 - `FindBreakEvenPrice` — extend to Balancer weighted-pool invariant
 - `FindBreakEvenTime` — extend to Balancer and Stableswap
 - `CalculateSlippage` — extend to Balancer and Stableswap
+- `LPQuote` — extend the read/quote methods to Balancer and Stableswap (add-only; V2/V3 calls unchanged)
 
 **New primitives.**
 
 - `AssessLiquidityDepth` — V3 tick-walking to assess concentrated liquidity depth around the active tick
 - `DiscoverPools` — pool discovery across protocols (stretch goal; overlaps with existing MCP ecosystem tools)
+
+**Multi-format tool schemas.** `get_schemas("anthropic")` and `get_schemas("openai")` — Anthropic tool-use and OpenAI function-calling envelopes derived from the shipped MCP schemas. Until this lands, `get_schemas` raises `NotImplementedError` for any non-`mcp` format.
 
 ## v3.0 (horizon)
 
