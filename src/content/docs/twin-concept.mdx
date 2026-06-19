@@ -15,7 +15,7 @@ The diagram above shows the architecture most agentic-DeFi stacks ship today. Ch
 
 ## The State Twin
 
-The State Twin is the missing layer. It mirrors AMM state off-chain into a canonical, typed, replayable form. Every primitive in DeFiPy takes an `lp` argument — an exchange object that holds reserves, fees, tick state, weights, amplification coefficient, whatever the protocol needs. The State Twin is what builds that `lp` from a declarative snapshot, regardless of where the snapshot came from. `MockProvider` builds twins from canonical recipes for notebooks and demos. `LiveProvider` builds them from live chain reads (V2 + V3). A custom provider can build them from a CSV file, a database row, a cached block, or a hypothetical scenario the analyst made up. The primitive can't tell the difference.
+The State Twin is the missing layer. It mirrors AMM state off-chain into a canonical, typed, replayable form. Every primitive in DeFiPy takes an `lp` argument — an exchange object that holds reserves, fees, tick state, weights, amplification coefficient, whatever the protocol needs. The State Twin is what builds that `lp` from a declarative snapshot, regardless of where the snapshot came from. `MockProvider` builds twins from canonical recipes for notebooks and demos. `LiveProvider` builds them from live chain reads (V2, V3, Balancer, and Stableswap). A custom provider can build them from a CSV file, a database row, a cached block, or a hypothetical scenario the analyst made up. The primitive can't tell the difference.
 
 ![](/img/state_twin_concept.svg)
 
@@ -48,9 +48,9 @@ The provider/builder split is what makes this composition work. Providers know a
 
 - **Class**: `defipy.twin.LiveProvider`
 
-  > - **Purpose**: Build twins from live chain reads (Uniswap V2 + V3). Requires the `[chain]` install extra.
+  > - **Purpose**: Build twins from live chain reads (Uniswap V2, V3, Balancer, and Stableswap). Requires the `[chain]` install extra.
   > - **Usage**: `LiveProvider(rpc_url="https://...").snapshot("uniswap_v2:0xADDR")`
-  > - **Status**: V2 + V3 ship in v2.1. Balancer + Stableswap LiveProviders are v2.2 work.
+  > - **Status**: V2 and V3 shipped in v2.1; Balancer and Stableswap in v2.2 — all four read live from chain.
   > - **See**: [LiveProvider](/live-provider/) for the full surface — pool_id format, block pinning, decimal-adjusted reserves, V3 active-liquidity reads.
 
 - **Class**: `defipy.twin.StateTwinBuilder`
@@ -75,7 +75,7 @@ The provider/builder split is what makes this composition work. Providers know a
   >   - `snapshot(pool_id: str, **kwargs) -> PoolSnapshot`  
   >     - **Parameters**:  
   >       - `pool_id`: Provider-specific identifier.
-  >       - `**kwargs`: Provider-specific options. `LiveProvider` accepts `block_number=N` for historical pinning and `lwr_tick`/`upr_tick` for V3 tick range; `MockProvider` silently absorbs unknown kwargs for cross-provider portability.
+  >       - `**kwargs`: Provider-specific options. `LiveProvider` accepts `block_number=N` for historical pinning, `lwr_tick`/`upr_tick` for V3 tick range, and `n_coins` for Stableswap coin count; `MockProvider` silently absorbs unknown kwargs for cross-provider portability.
   >
   > - **Output**: A `PoolSnapshot` of the appropriate protocol subclass.
 

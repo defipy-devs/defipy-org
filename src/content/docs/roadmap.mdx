@@ -1,6 +1,6 @@
 ---
 title: "Roadmap & Changelog"
-description: "v2.0 shipped 2026-04-23. v2.1 brings LiveProvider, multi-format tool schemas, and observability."
+description: "v2.0 (2026-04-23), v2.1 (V2/V3 LiveProvider), and v2.2 (Balancer + Stableswap LiveProvider) shipped. Planning primitives are next."
 ---
 
 ## v2.0 (shipped)
@@ -14,9 +14,9 @@ Released 2026-04-23. See [What's New in v2](/quick/whats-new-v2/) for the full f
 - Packaging fixes for all primitive sub-packages
 - Zero breaking changes from v1.2.0
 
-## v2.1 (next)
+## v2.1 (shipped)
 
-**LiveProvider implementation.** On-chain snapshot construction for V2 and V3 pools first (most common protocols). Balancer and Stableswap LiveProviders follow. `LiveProvider(rpc_url)` constructor is already stable in v2.0; v2.1 makes `snapshot()` functional.
+**LiveProvider — Uniswap V2 and V3.** On-chain snapshot construction for the two most common protocols. `LiveProvider(rpc_url)` was stable since v2.0; v2.1 makes `snapshot()` functional for V2 and V3 — block pinning, decimal-adjusted reserves, V3 active-liquidity reads, and Multicall3 batching. Balancer and Stableswap followed in v2.2 (below).
 
 **Multi-format tool schemas.** `get_schemas("anthropic")` and `get_schemas("openai")` — both derivable from the shipped MCP schemas with envelope-format wrappers. Reference examples in `python/examples/`.
 
@@ -28,7 +28,15 @@ Released 2026-04-23. See [What's New in v2](/quick/whats-new-v2/) for the full f
 - `CompareFeeTiers` — pending MockProvider multi-fee-tier recipes
 - `EvaluateRebalance` — pending multi-step reasoning ergonomics assessment
 
-## v2.2+ (planned)
+## v2.2 (shipped)
+
+**Balancer and Stableswap LiveProvider.** The on-chain read path extends to Balancer V2 weighted pools (2-asset) and Curve-style plain Stableswap pools (2–3 coins, including the DAI/USDC/USDT 3pool). `provider.snapshot("balancer:0x...")` and `provider.snapshot("stableswap:0x...")` now produce live twins — the `NotImplementedError` stubs are gone.
+
+Under the hood: an argument-bearing Multicall3 helper (for `getPoolTokens(poolId)`, `coins(i)`, `balances(i)`), the Balancer Vault two-hop read, a Curve coin-count probe, and an N-coin Stableswap snapshot. Requires `web3scout >= 1.0.0`, which bundles the Balancer/Curve read ABIs. Scope: 2-asset Balancer and plain Stableswap; rate-bearing pools (metapools, LSD) are deferred.
+
+The net effect: every primitive that already supports Balancer or Stableswap can now run against **live** chain state, not just MockProvider recipes.
+
+## v2.3 (planned)
 
 **Planning primitives category.** Non-mutating projections that answer "what should I do next?":
 
@@ -59,5 +67,7 @@ Released 2026-04-23. See [What's New in v2](/quick/whats-new-v2/) for the full f
 
 The full changelog with per-release details is maintained in [CHANGELOG.md](https://github.com/defipy-devs/defipy/blob/main/CHANGELOG.md) in the main repository.
 
+- [v2.2.0](https://github.com/defipy-devs/defipy/compare/v2.1.0...v2.2.0) — 2026-06-18
+- [v2.1.0](https://github.com/defipy-devs/defipy/compare/v2.0.0...v2.1.0) — 2026-05-07
 - [v2.0.0](https://github.com/defipy-devs/defipy/compare/v1.2.0...v2.0.0) — 2026-04-23
 - [v1.2.0](https://github.com/defipy-devs/defipy/releases/tag/v1.2.0) — 2026-04-18

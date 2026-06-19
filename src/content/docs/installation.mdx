@@ -43,10 +43,10 @@ snapshot = provider.snapshot("uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C
 lp = StateTwinBuilder().build(snapshot)
 ```
 
-See [LiveProvider](/live-provider/) for the full surface and the V3 read pattern.
+See [LiveProvider](/live-provider/) for the full surface — Uniswap V2/V3, Balancer, and Stableswap read patterns.
 
 :::note
-The `[chain]` extra pins `web3 < 7.0` because `web3scout 0.2.0` depends on `eth_utils.abi.get_abi_input_types`, which was removed in web3 7. If you have web3 7.x already installed for other reasons, `pip install 'defipy[chain]'` will downgrade it. Tracking upstream as v2.2 work.
+The `[chain]` extra pins `web3 < 7.0` because `web3scout` (>= 1.0.0) uses a `web3._utils` API removed in web3 7. If you have web3 7.x already installed for other reasons, `pip install 'defipy[chain]'` will downgrade it. The web3 7.x migration is tracked upstream in web3scout.
 :::
 
 **Agentic install (full LLM + chain stack)**

@@ -1,13 +1,13 @@
 ---
 title: "LiveProvider"
-description: "Build State Twins from real on-chain pool state. Uniswap V2 and V3 ship in v2.1; Balancer and Stableswap follow in v2.2."
+description: "Build State Twins from real on-chain pool state. Uniswap V2 and V3 (v2.1), Balancer and Stableswap (v2.2) — all four protocols read live from chain."
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 `LiveProvider` reads pool state directly from a chain RPC and turns it into a `PoolSnapshot`. From there, `StateTwinBuilder` constructs a usable exchange object — and every primitive in DeFiPy works against it the same way it works against a `MockProvider` recipe.
 
-v2.1 supports **Uniswap V2 and V3**. Balancer and Stableswap LiveProvider implementations are v2.2 work. For those protocols today, use [MockProvider](/twin-concept/) recipes.
+LiveProvider reads **Uniswap V2 and V3** (since v2.1) and **Balancer and Stableswap** (since v2.2) directly from chain. All four protocols produce snapshots that `StateTwinBuilder` turns into twins every primitive consumes the same way.
 
 ## Install
 
@@ -35,7 +35,7 @@ Wrap install specs with extras in single quotes — e.g. `pip install 'defipy[ag
 :::
 
 :::note
-Both `[chain]` and `[agentic]` extras pin `web3 < 7.0` because `web3scout 0.2.0` depends on `eth_utils.abi.get_abi_input_types`, which was removed in web3 7. If web3 7.x is already installed for other reasons, the install will downgrade it. Tracking upstream as v2.2 work.
+Both `[chain]` and `[agentic]` extras pin `web3 < 7.0` because `web3scout` (>= 1.0.0) uses a `web3._utils` API removed in web3 7. If web3 7.x is already installed for other reasons, the install will downgrade it. The web3 7.x migration is tracked upstream in web3scout.
 :::
 
 ## Quickstart — Uniswap V2
@@ -97,6 +97,52 @@ print(f"Block:    {w3.eth.block_number}")
 The canonical USDC/WETH V3 pool at this address is the **500bps** (0.05%) tier on mainnet. Earlier draft documentation labeled it 3000bps; the on-chain truth is 500bps. The `health.fee_pips` value will report `500` for this pool.
 :::
 
+## Quickstart — Balancer
+
+Balancer V2 weighted pools (2-asset) emit no per-pool balances of their own — they live on the canonical Vault, keyed by `poolId`. Pass the **WeightedPool** address; `LiveProvider` resolves the Vault and reads balances and normalized weights internally.
+
+```python
+from defipy.twin import LiveProvider, StateTwinBuilder
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+
+# Balancer 80/20 BAL/WETH weighted pool
+snap = provider.snapshot(
+    "balancer:0x5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"
+)
+
+lp = StateTwinBuilder().build(snap)
+
+# Same shape as any twin — every primitive works against it
+from defipy import CheckPoolHealth
+health = CheckPoolHealth().apply(lp)
+print(f"Spot price: {health.spot_price:.4f}")
+```
+
+v2.2 covers **2-asset weighted pools**. A pool with more than two tokens raises `NotImplementedError`.
+
+## Quickstart — Stableswap
+
+Curve-style plain Stableswap pools read per-pool — pass the pool address directly. The coin count is auto-detected; pass `n_coins` to skip the probe.
+
+```python
+from defipy.twin import LiveProvider, StateTwinBuilder
+
+provider = LiveProvider("https://eth-mainnet.g.alchemy.com/v2/<key>")
+
+# Curve 3pool (DAI/USDC/USDT) — coin count auto-detected
+snap = provider.snapshot(
+    "stableswap:0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7"
+)
+
+lp = StateTwinBuilder().build(snap)
+
+# The twin feeds Stableswap-aware primitives the same way MockProvider does:
+# AnalyzeStableswapPosition, AssessDepegRisk, SimulateStableswapPriceMove.
+```
+
+v2.2 covers **plain pools (2–3 coins)** — DAI/USDC/USDT 3pool is the canonical target. Rate-bearing pools (metapools, LSD pools) carry per-token rates and are out of scope.
+
 ## The pool_id format
 
 The first argument to `.snapshot()` is a string of the form `"<protocol>:<address>"`:
@@ -112,8 +158,8 @@ Address casing is normalized internally — lowercase, uppercase, or EIP-55 chec
 |---|---|
 | `uniswap_v2` | v2.1 (works) |
 | `uniswap_v3` | v2.1 (works) |
-| `balancer` | v2.2+ (raises `NotImplementedError`) |
-| `stableswap` | v2.2+ (raises `NotImplementedError`) |
+| `balancer` | v2.2 (works — 2-asset weighted pools) |
+| `stableswap` | v2.2 (works — plain pools, 2–3 coins) |
 
 Malformed `pool_id` (missing colon, empty protocol, empty address) raises `ValueError` with a message naming the offending input and listing the valid protocols.
 
@@ -157,7 +203,7 @@ The amounts derived for the snapshot scale with the chosen range. Three regimes:
 The single-sided regimes are valid V3 semantics, not error states. They reflect the real shape of a position whose range has been crossed.
 
 :::note
-v2.1 V3 LiveProvider is **active-liquidity only**. It does not walk the tick bitmap — primitives that need liquidity at non-active ticks (`AssessLiquidityDepth`, `EvaluateTickRanges` in their full forms) will see empty tick data. Active-liquidity primitives (`AnalyzePosition`, `SimulatePriceMove`, `CheckPoolHealth`, `CalculateSlippage`, `DetectRugSignals`) work fully. Tick walking pairs with `AssessLiquidityDepth` in v2.1.x or v2.2.
+v2.1 V3 LiveProvider is **active-liquidity only**. It does not walk the tick bitmap — primitives that need liquidity at non-active ticks (`AssessLiquidityDepth`, `EvaluateTickRanges` in their full forms) will see empty tick data. Active-liquidity primitives (`AnalyzePosition`, `SimulatePriceMove`, `CheckPoolHealth`, `CalculateSlippage`, `DetectRugSignals`) work fully. Tick walking pairs with `AssessLiquidityDepth` in a future release.
 :::
 
 ## Reserves are decimal-adjusted floats
@@ -172,7 +218,9 @@ V3 snapshots batch all pool reads (`token0`, `token1`, `slot0`, `liquidity`, `fe
 
 V2 snapshots use sequential reads — four `eth_call`s pinned to the resolved block, plus `eth_getBlockByNumber` for the timestamp. The multicall optimization buys less for V2's smaller read set.
 
-The Multicall3 contract address (`0xcA11bde05977b3631167028862bE2a173976CA11`) is hardcoded; this address is the same on every major EVM chain Multicall3 has been deployed to. Chains without Multicall3 will fail with a descriptive error — that's a v2.2 problem.
+Balancer and Stableswap snapshots also batch through Multicall3, including the argument-bearing calls (`getPoolTokens(poolId)`, `coins(i)`, `balances(i)`) that V3's no-arg batch doesn't need. Balancer takes two pinned round trips — the pool's `poolId`/`vault`/weights, then the Vault's balances keyed by that `poolId` (the second can't start until the first returns). Stableswap takes one, after an optional coin-count probe.
+
+The Multicall3 contract address (`0xcA11bde05977b3631167028862bE2a173976CA11`) is hardcoded; this address is the same on every major EVM chain Multicall3 has been deployed to. Chains without Multicall3 will fail with a descriptive error — multi-chain fallback is a future enhancement.
 
 ## Chain context fields
 
@@ -181,7 +229,7 @@ Every snapshot from `LiveProvider` carries three fields populated from the chain
 | Field | Source |
 |---|---|
 | `block_number` | The resolved concrete block — the value of `block_number` kwarg if passed, otherwise the result of `eth_blockNumber` at the top of `.snapshot()` |
-| `timestamp` | Block header timestamp (V2) or Multicall3's `getCurrentBlockTimestamp()` pinned to the resolved block (V3) |
+| `timestamp` | Block header timestamp (V2) or Multicall3's `getCurrentBlockTimestamp()` pinned to the resolved block (V3, Balancer, Stableswap) |
 | `chain_id` | `eth_chainId`, cached on the underlying `RpcClient` after first read so repeat snapshots on the same provider don't re-fetch |
 
 These fields are `Optional[int] = None` on the snapshot dataclasses. `MockProvider` leaves them None — synthetic snapshots have no chain context, and inventing fake values would be dishonest. Consumers that need chain context check for None and branch:
@@ -210,7 +258,7 @@ For long-running processes that may see the connection go stale, construct a fre
 | Method | Returns | Purpose |
 |---|---|---|
 | `LiveProvider(rpc_url: str)` | `LiveProvider` | Construct a provider against the given RPC endpoint. No chain reads happen until `.snapshot()` or `.get_w3()` is called. |
-| `.snapshot(pool_id, *, block_number=None, lwr_tick=None, upr_tick=None)` | `PoolSnapshot` | Read pool state and return a typed snapshot. `pool_id` is `"<protocol>:<address>"`. `block_number` defaults to `"latest"` (resolved once at the top of the call); pass an int for historical reads. `lwr_tick` / `upr_tick` apply to V3 pools only — they default to full-range. |
+| `.snapshot(pool_id, *, block_number=None, lwr_tick=None, upr_tick=None, n_coins=None)` | `PoolSnapshot` | Read pool state and return a typed snapshot. `pool_id` is `"<protocol>:<address>"`. `block_number` defaults to `"latest"` (resolved once at the top of the call); pass an int for historical reads. `lwr_tick` / `upr_tick` apply to V3 pools only (default full-range); `n_coins` applies to Stableswap pools only (default: auto-detect via a coin-count probe). |
 | `.get_w3()` | `web3.Web3` | Return the underlying `web3.Web3` instance. See [Signing transactions: bring your own](#signing-transactions-bring-your-own) below. |
 
 All three respect the lazy-import contract: importing `LiveProvider` does not require `[chain]` to be installed; calling either of the two methods does. Without the install, the call surfaces a clear `ImportError` pointing at the missing extras.
@@ -243,20 +291,21 @@ What's not here, by design: no `provider.sign()`, no `provider.send_transaction(
 |---|---|
 | Malformed `pool_id` (no colon, empty parts) | `ValueError` with message and valid-protocols list |
 | Unknown protocol prefix | `ValueError` |
-| Known-but-unimplemented protocol (`balancer`, `stableswap`) | `NotImplementedError` pointing at v2.2 |
+| Balancer pool with more than 2 tokens, or a non-plain (rate-bearing) Stableswap pool | `NotImplementedError` — v2.2 scope is 2-asset Balancer and plain Stableswap |
 | `lwr_tick >= upr_tick` for V3 | `ValueError` from `LiveProvider` (caught before chain reads) |
 | RPC unreachable / pool address has no contract / multicall reverts | Underlying `web3.py` exception propagates |
 
 For V3, if any single call inside the multicall reverts, the whole snapshot fails — `allowFailure=False` is set on every call. The intent is loud failure; a half-populated snapshot is worse than no snapshot.
 
-## What's coming v2.2 and beyond
+## What's coming next
 
-- **Balancer LiveProvider** — V3 of the same pattern for Balancer 2-asset weighted pools
-- **Stableswap LiveProvider** — same for Curve-style stableswap pools
+Balancer and Stableswap LiveProvider shipped in v2.2. Still ahead:
+
 - **V3 tick bitmap walking** — pairs with `AssessLiquidityDepth`, enables non-active-tick analyses
 - **Anvil fork support** — optional CI lane against a forked node for higher-confidence integration tests
+- **Planning primitives** — `PlanRebalance`, `PlanZapIn`, `PlanExit` (v2.3)
 
-See the [Roadmap](/roadmap/) for the full v2.2+ timeline.
+See the [Roadmap](/roadmap/) for the full timeline.
 
 ## See also
 

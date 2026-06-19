@@ -9,7 +9,7 @@ The `defipy.twin` module provides the State Twin abstraction — a protocol-agno
 
 - `StateTwinProvider` — ABC defining the `snapshot(pool_id, **kwargs) → PoolSnapshot` contract
 - `MockProvider` — synthetic pool snapshots for notebooks, tests, and demos (4 canonical recipes)
-- `LiveProvider` — on-chain pool snapshots for Uniswap V2 and V3 (v2.1+; requires the `[chain]` install extra)
+- `LiveProvider` — on-chain pool snapshots for Uniswap V2, V3, Balancer, and Stableswap (V2/V3 since v2.1, Balancer/Stableswap since v2.2; requires the `[chain]` install extra)
 - `StateTwinBuilder` — dispatches on snapshot type to construct the protocol's exchange object
 - `PoolSnapshot` — base class; subclasses `V2PoolSnapshot`, `V3PoolSnapshot`, `BalancerPoolSnapshot`, `StableswapPoolSnapshot`
 
@@ -37,7 +37,7 @@ snapshot = provider.snapshot("uniswap_v2:0xB4e16d0168e52d35CaCD2c6185b44281Ec28C
 lp = StateTwinBuilder().build(snapshot)
 ```
 
-The `pool_id` format for `LiveProvider` is `"<protocol>:<address>"`. V3 pools use the same shape: `"uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"`. See [LiveProvider](/live-provider/) for the full surface — block pinning, decimal-adjusted reserves, V3 active-liquidity reads, and what's coming v2.2 (Balancer + Stableswap LiveProvider, V3 tick walking).
+The `pool_id` format for `LiveProvider` is `"<protocol>:<address>"`. V3 pools use the same shape: `"uniswap_v3:0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"`. Balancer and Stableswap use it too — `"balancer:0x..."` (the WeightedPool address) and `"stableswap:0x..."` (the pool address). See [LiveProvider](/live-provider/) for the full surface — block pinning, decimal-adjusted reserves, V3 active-liquidity reads, Balancer/Stableswap reads, and what's next (V3 tick walking, planning primitives).
 
 **Available MockProvider recipes**
 
